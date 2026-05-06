@@ -580,6 +580,14 @@ def run_hook(port: int):
         _emit_decision("ask")
         return
 
+    # The user may instruct Claude (via CLAUDE.md) to curl the gate before
+    # each action. Installing claude-qte already implies consent for that
+    # self-call, so auto-allow it — the *actual* command will hit the hook
+    # again and get prompted there.
+    if _is_gate_self_call(event, port):
+        _emit_decision("allow", "claude-qte gate self-call")
+        return
+
     if _user_is_present():
         _emit_decision("ask")
         return
@@ -597,6 +605,17 @@ def run_hook(port: int):
         _emit_decision("allow", answer.get("answer") or "approved via claude-qte")
     else:
         _emit_decision("deny", answer.get("answer") or "denied via claude-qte")
+
+
+def _is_gate_self_call(event: dict, port: int) -> bool:
+    if event.get("tool_name") != "Bash":
+        return False
+    cmd = ((event.get("tool_input") or {}).get("command") or "")
+    for host in ("localhost", "127.0.0.1"):
+        for path in ("/ask", "/ping"):
+            if f"{host}:{port}{path}" in cmd:
+                return True
+    return False
 
 
 def _emit_decision(decision: str, reason: str = ""):
