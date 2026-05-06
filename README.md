@@ -13,7 +13,7 @@ as Claude Code's prompt. Answer; window vanishes; Claude proceeds.
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/<owner>/claude-qte/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/adiletbaimyrza/claude-qte/main/install.sh | sh
 ```
 
 That single command:
