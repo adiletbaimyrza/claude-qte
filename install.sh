@@ -1,7 +1,7 @@
 #!/bin/sh
 # claude-qte one-shot installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/claude-qte/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/adiletbaimyrza/claude-qte/main/install.sh | sh
 #
 # Downloads the right macOS binary from the latest GitHub release, then runs
 # `claude-qte install` so the actual install logic lives with the binary
@@ -9,7 +9,7 @@
 
 set -eu
 
-REPO="${CLAUDE_QTE_REPO:-OWNER/claude-qte}"
+REPO="${CLAUDE_QTE_REPO:-adiletbaimyrza/claude-qte}"
 TMPDIR="$(mktemp -d -t claude-qte-install.XXXXXX)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
