@@ -16,22 +16,7 @@ try:
     from pygments.lex import lex
     from pygments.token import Token
     HAS_PYGMENTS = True
-except ImportError:
-    HAS_PYGMENTS = False
-    Token = None  # type: ignore
-
-from claude_qte._runtime import TMP_DIR
-
-ACCENT_FG = 208  # 256-color orange (Claude Code-ish)
-DIM_FG = 244
-TEXT_FG = 252
-PANEL_BG = 234
-
-BG_ADD = 22  # dark green
-BG_DEL = 52  # dark red
-
-# Mapping of Pygments tokens to 256-color foregrounds
-if HAS_PYGMENTS:
+    # Mapping of Pygments tokens to 256-color foregrounds
     TOKEN_COLORS = {
         Token.Keyword: 208,
         Token.Keyword.Type: 208,
@@ -73,8 +58,6 @@ if HAS_PYGMENTS:
         Token.Generic.Output: 250,
         Token.Generic.Traceback: 160,
     }
-else:
-    TOKEN_COLORS = {}  # type: ignore
 except ImportError:
     HAS_PYGMENTS = False
     TOKEN_COLORS = {}
