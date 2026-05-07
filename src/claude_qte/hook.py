@@ -10,7 +10,13 @@ import subprocess
 import sys
 
 from claude_qte._platform import frontmost_terminal_tty, idle_seconds
-from claude_qte._runtime import ANSWER_TIMEOUT, TMP_DIR, pick_free_port, wait_for_port
+from claude_qte._runtime import (
+    ANSWER_TIMEOUT,
+    DISABLED_FLAG,
+    TMP_DIR,
+    pick_free_port,
+    wait_for_port,
+)
 
 # How long the user can be away from the keyboard / off the terminal before
 # we assume they aren't watching and pop up the QTE window.
@@ -22,6 +28,10 @@ def run_hook() -> None:
     try:
         event = json.loads(raw) if raw.strip() else {}
     except json.JSONDecodeError:
+        emit_decision("ask")
+        return
+
+    if os.path.exists(DISABLED_FLAG):
         emit_decision("ask")
         return
 

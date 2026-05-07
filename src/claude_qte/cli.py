@@ -27,6 +27,8 @@ def main() -> None:
     sub.add_parser("hook", help="Run as a Claude Code PreToolUse hook")
     sub.add_parser("install", help="Install Claude Code hook")
     sub.add_parser("uninstall", help="Undo install")
+    sub.add_parser("disable", help="Disable the gate (fall back to native prompts)")
+    sub.add_parser("enable", help="Re-enable the gate")
     run_p = sub.add_parser(
         "run",
         help="Start a per-session gate, run command, kill the gate on exit",
@@ -47,6 +49,14 @@ def main() -> None:
         from claude_qte.installer import run_uninstall
 
         run_uninstall()
+    elif args.cmd == "disable":
+        from claude_qte.installer import run_disable
+
+        run_disable()
+    elif args.cmd == "enable":
+        from claude_qte.installer import run_enable
+
+        run_enable()
     elif args.cmd == "run":
         from claude_qte.wrapper import run_command
 

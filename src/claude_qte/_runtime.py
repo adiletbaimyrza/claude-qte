@@ -11,6 +11,8 @@ import time
 TMP_DIR = os.path.join(tempfile.gettempdir(), "claude-qte")
 ANSWER_TIMEOUT = 300  # seconds the gate may sit on the popup
 
+DISABLED_FLAG = os.path.expanduser("~/.config/claude-qte/disabled")
+
 _request_lock = threading.Lock()
 _request_seq = 0
 

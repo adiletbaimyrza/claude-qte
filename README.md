@@ -121,6 +121,18 @@ is sent back to Claude as the deny reason.
 | 1        | Quick allow                     |
 | 2 / Esc  | Deny and open the reply prompt  |
 
+## Slash commands
+
+Once installed, two Claude Code slash commands are available in every session:
+
+| Command    | What it does                                       |
+| ---------- | -------------------------------------------------- |
+| `/qte-off` | Disable the gate — Claude uses native prompts      |
+| `/qte-on`  | Re-enable the gate                                 |
+
+Disabling writes `~/.config/claude-qte/disabled`; the hook sees it and
+falls through to `"ask"` on every tool call. Enabling deletes the file.
+
 ## Subcommands
 
 | Command                     | What it does                                          |
@@ -130,6 +142,8 @@ is sent back to Claude as the deny reason.
 | `claude-qte hook`           | PreToolUse hook entry point. Wired by `install`.      |
 | `claude-qte install`        | Drop the binary and register the Claude Code hook.    |
 | `claude-qte uninstall`      | Reverse `install`.                                    |
+| `claude-qte disable`        | Disable the gate (same as `/qte-off`).                |
+| `claude-qte enable`         | Re-enable the gate (same as `/qte-on`).               |
 
 ## API (the gate's HTTP surface)
 

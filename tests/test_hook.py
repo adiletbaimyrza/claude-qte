@@ -145,6 +145,26 @@ class TestEnsureGate:
         assert result is None
 
 
+class TestDisabledFlag:
+    def test_disabled_flag_causes_ask(self, monkeypatch, tmp_path, capsys):
+        flag = str(tmp_path / "disabled")
+        open(flag, "w").close()
+        monkeypatch.setattr(hook_mod, "DISABLED_FLAG", flag)
+
+        import io
+
+        monkeypatch.setattr("sys.stdin", io.StringIO('{"tool_name": "Bash", "tool_input": {}}'))
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+    def test_no_flag_does_not_short_circuit(self, monkeypatch, tmp_path):
+        flag = str(tmp_path / "disabled")
+        monkeypatch.setattr(hook_mod, "DISABLED_FLAG", flag)
+        # Flag absent — should NOT short-circuit (reaches presence check).
+        assert not __import__("os").path.exists(flag)
+
+
 class TestEmitDecision:
     def test_allow_without_reason(self, capsys):
         emit_decision("allow")

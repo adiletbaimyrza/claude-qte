@@ -75,3 +75,59 @@ class TestUnpatchClaudeMd:
         monkeypatch.setattr(inst_mod, "CLAUDE_MD_PATH", path)
         inst_mod.unpatch_claude_md()  # must not raise
         assert not os.path.exists(path)
+
+
+class TestDisableEnable:
+    def test_disable_creates_flag(self, monkeypatch, tmp_path, capsys):
+        flag = str(tmp_path / "disabled")
+        monkeypatch.setattr(inst_mod, "DISABLED_FLAG", flag)
+        inst_mod.run_disable()
+        assert os.path.exists(flag)
+        assert "disabled" in capsys.readouterr().out
+
+    def test_disable_idempotent(self, monkeypatch, tmp_path, capsys):
+        flag = str(tmp_path / "disabled")
+        monkeypatch.setattr(inst_mod, "DISABLED_FLAG", flag)
+        inst_mod.run_disable()
+        inst_mod.run_disable()  # must not raise
+        assert os.path.exists(flag)
+
+    def test_enable_removes_flag(self, monkeypatch, tmp_path, capsys):
+        flag = str(tmp_path / "disabled")
+        monkeypatch.setattr(inst_mod, "DISABLED_FLAG", flag)
+        inst_mod.run_disable()
+        inst_mod.run_enable()
+        assert not os.path.exists(flag)
+        assert "enabled" in capsys.readouterr().out
+
+    def test_enable_noop_when_not_disabled(self, monkeypatch, tmp_path):
+        flag = str(tmp_path / "disabled")
+        monkeypatch.setattr(inst_mod, "DISABLED_FLAG", flag)
+        inst_mod.run_enable()  # must not raise
+        assert not os.path.exists(flag)
+
+
+class TestSlashCommands:
+    def test_install_creates_command_files(self, monkeypatch, tmp_path):
+        cmds_dir = str(tmp_path / "commands")
+        monkeypatch.setattr(inst_mod, "COMMANDS_DIR", cmds_dir)
+        monkeypatch.setattr(inst_mod, "_QTE_OFF_CMD", str(tmp_path / "commands" / "qte-off.md"))
+        monkeypatch.setattr(inst_mod, "_QTE_ON_CMD", str(tmp_path / "commands" / "qte-on.md"))
+        inst_mod.install_slash_commands()
+        assert os.path.exists(inst_mod._QTE_OFF_CMD)
+        assert os.path.exists(inst_mod._QTE_ON_CMD)
+
+    def test_uninstall_removes_command_files(self, monkeypatch, tmp_path):
+        cmds_dir = str(tmp_path / "commands")
+        monkeypatch.setattr(inst_mod, "COMMANDS_DIR", cmds_dir)
+        monkeypatch.setattr(inst_mod, "_QTE_OFF_CMD", str(tmp_path / "commands" / "qte-off.md"))
+        monkeypatch.setattr(inst_mod, "_QTE_ON_CMD", str(tmp_path / "commands" / "qte-on.md"))
+        inst_mod.install_slash_commands()
+        inst_mod.uninstall_slash_commands()
+        assert not os.path.exists(inst_mod._QTE_OFF_CMD)
+        assert not os.path.exists(inst_mod._QTE_ON_CMD)
+
+    def test_uninstall_noop_when_missing(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(inst_mod, "_QTE_OFF_CMD", str(tmp_path / "qte-off.md"))
+        monkeypatch.setattr(inst_mod, "_QTE_ON_CMD", str(tmp_path / "qte-on.md"))
+        inst_mod.uninstall_slash_commands()  # must not raise
