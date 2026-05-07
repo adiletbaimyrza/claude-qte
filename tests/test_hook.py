@@ -450,7 +450,9 @@ class TestParentTty:
     def test_already_dev_prefixed(self, monkeypatch):
         import subprocess
 
-        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="/dev/ttys001 1234\n"))
+        monkeypatch.setattr(
+            subprocess, "run", lambda *a, **kw: MagicMock(stdout="/dev/ttys001 1234\n")
+        )
         result = hook_mod._parent_tty()
         assert result == "/dev/ttys001"
 
@@ -458,10 +460,12 @@ class TestParentTty:
         import subprocess
 
         # First call: immediate parent has no TTY; second call: grandparent has one.
-        responses = iter([
-            MagicMock(stdout="? 5678\n"),
-            MagicMock(stdout="pts/2 1\n"),
-        ])
+        responses = iter(
+            [
+                MagicMock(stdout="? 5678\n"),
+                MagicMock(stdout="pts/2 1\n"),
+            ]
+        )
         monkeypatch.setattr(subprocess, "run", lambda *a, **kw: next(responses))
         assert hook_mod._parent_tty() == "/dev/pts/2"
 
