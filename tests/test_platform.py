@@ -254,6 +254,8 @@ class TestSpawnTerminalWindowLinux:
         monkeypatch.delenv("TERM_PROGRAM", raising=False)
         monkeypatch.setattr(plat.time, "sleep", lambda _: None)
         monkeypatch.setattr(plat, "_center_window_linux", lambda *a, **kw: None)
+        monkeypatch.setattr(plat, "_get_active_xwindow_id", lambda: "")
+        monkeypatch.setattr(plat, "_pin_window_on_top_linux", lambda *a, **kw: None)
 
         mock_proc = MagicMock()
         mock_proc.pid = 42
@@ -269,6 +271,8 @@ class TestSpawnTerminalWindowLinux:
         monkeypatch.delenv("TERM_PROGRAM", raising=False)
         monkeypatch.setattr(plat.time, "sleep", lambda _: None)
         monkeypatch.setattr(plat, "_center_window_linux", lambda *a, **kw: None)
+        monkeypatch.setattr(plat, "_get_active_xwindow_id", lambda: "")
+        monkeypatch.setattr(plat, "_pin_window_on_top_linux", lambda *a, **kw: None)
 
         def _which(name):
             return "/usr/bin/xterm" if name == "xterm" else None

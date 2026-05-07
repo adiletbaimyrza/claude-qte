@@ -334,8 +334,66 @@ def _center_window_linux(cols: int, rows: int) -> None:
         pass
 
 
+def _get_active_xwindow_id() -> str:
+    """Return the hex window ID of the currently focused X11 window, or ''."""
+    try:
+        out = subprocess.run(
+            ["xdotool", "getactivewindow"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout.strip()
+        return out if out.isdigit() else ""
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return ""
+
+
+def _pin_window_on_top_linux(xwin_id: str) -> None:
+    """Set _NET_WM_STATE_ABOVE and raise the window. No-op if tools unavailable."""
+    if not xwin_id:
+        return
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["wmctrl", "-i", "-r", xwin_id, "-b", "add,above"],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["xdotool", "windowraise", xwin_id],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["xdotool", "windowfocus", "--sync", xwin_id],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
+def raise_window_linux(xwin_id: str) -> None:
+    """Re-raise a pinned window so it comes back to the front if buried."""
+    if not xwin_id:
+        return
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["xdotool", "windowraise", xwin_id],
+            check=False,
+            timeout=1,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
 def _spawn_terminal_window_linux(rid: str, question: str) -> str:
-    """Spawn a terminal emulator running the TUI. Returns str(pid) or ''."""
+    """Spawn a terminal emulator running the TUI. Returns 'pid:xwin_id' or str(pid)."""
     from claude_qte._runtime import current_invocation, shell_quote
     from claude_qte.popup import compute_window_size
 
@@ -370,19 +428,35 @@ def _spawn_terminal_window_linux(rid: str, question: str) -> str:
         else:
             return ""
 
-    # Best-effort centering: wait briefly for the window to appear, then move it.
-    time.sleep(0.2)
+    # Wait for the window to appear, center it, then pin it on top.
+    time.sleep(0.25)
     _center_window_linux(cols, rows)
+    xwin_id = _get_active_xwindow_id()
+    _pin_window_on_top_linux(xwin_id)
 
-    return str(proc.pid)
+    # Encode both pid and xwin_id so the polling loop can re-raise periodically.
+    return f"{proc.pid}:{xwin_id}" if xwin_id else str(proc.pid)
 
 
-def _close_terminal_window_linux(pid_str: str) -> None:
-    if not pid_str:
-        return
+def _parse_linux_handle(handle: str) -> tuple[int, str]:
+    """Parse a handle returned by _spawn_terminal_window_linux into (pid, xwin_id)."""
+    if ":" in handle:
+        pid_part, xwin_part = handle.split(":", 1)
+        try:
+            return int(pid_part), xwin_part
+        except ValueError:
+            pass
     try:
-        pid = int(pid_str)
+        return int(handle), ""
     except ValueError:
+        return 0, ""
+
+
+def _close_terminal_window_linux(handle: str) -> None:
+    if not handle:
+        return
+    pid, _xwin_id = _parse_linux_handle(handle)
+    if not pid:
         return
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.kill(pid, signal.SIGTERM)
@@ -439,3 +513,14 @@ def close_terminal_window(handle: str) -> None:
         _close_terminal_window_macos(handle)
     elif IS_LINUX:
         _close_terminal_window_linux(handle)
+
+
+def keep_window_on_top(handle: str) -> None:
+    """Re-raise the popup window so it stays above other windows.
+
+    Called periodically from the polling loop while waiting for user input.
+    No-op on unsupported platforms or if the handle is empty.
+    """
+    if IS_LINUX:
+        _, xwin_id = _parse_linux_handle(handle)
+        raise_window_linux(xwin_id)

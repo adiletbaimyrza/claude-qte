@@ -13,7 +13,7 @@ import os
 import textwrap
 import time
 
-from claude_qte._platform import close_terminal_window, spawn_terminal_window
+from claude_qte._platform import close_terminal_window, keep_window_on_top, spawn_terminal_window
 from claude_qte._runtime import (
     ANSWER_TIMEOUT,
     TMP_DIR,
@@ -47,6 +47,7 @@ def prompt_user(question: str) -> dict:
 
     answer = None
     deadline = time.time() + ANSWER_TIMEOUT
+    last_raise = time.time()
     while time.time() < deadline:
         if os.path.exists(afile):
             try:
@@ -57,6 +58,11 @@ def prompt_user(question: str) -> dict:
                 safe_unlink(qfile)
             break
         time.sleep(0.03)
+        # Re-raise the window every second so it stays above other windows.
+        now = time.time()
+        if now - last_raise >= 1.0:
+            keep_window_on_top(win_id)
+            last_raise = now
 
     # Brief pause so the TUI's `os._exit(0)` fully tears down the exec'd
     # Python process before we ask Terminal to close the window. With no
