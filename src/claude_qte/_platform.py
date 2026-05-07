@@ -233,11 +233,16 @@ _TERMINAL_NAMES = frozenset(
 # Detection order for the emulator to spawn the TUI in.
 _LINUX_EMULATOR_CANDIDATES = [
     "gnome-terminal",
+    "xfce4-terminal",
     "xterm",
     "konsole",
+    "lxterminal",
+    "mate-terminal",
     "x-terminal-emulator",
     "kitty",
     "alacritty",
+    "tilix",
+    "wezterm",
 ]
 
 
@@ -326,6 +331,8 @@ def _build_terminal_cmd_linux(emulator: str, cols: int, rows: int, tui_cmd: str)
     geo = f"{cols}x{rows}"
     if emulator == "gnome-terminal":
         return ["gnome-terminal", f"--geometry={geo}", "--", "bash", "-c", f"exec {tui_cmd}"]
+    if emulator in ("xfce4-terminal", "mate-terminal", "lxterminal"):
+        return [emulator, f"--geometry={geo}", "-e", tui_cmd]
     if emulator == "xterm":
         return ["xterm", "-geometry", geo, "-e", tui_cmd]
     if emulator == "konsole":
@@ -342,8 +349,11 @@ def _build_terminal_cmd_linux(emulator: str, cols: int, rows: int, tui_cmd: str)
             f"exec {tui_cmd}",
         ]
     if emulator == "alacritty":
-        # alacritty does not support --geometry; size is cosmetic only.
         return ["alacritty", "-e", "bash", "-c", f"exec {tui_cmd}"]
+    if emulator == "tilix":
+        return ["tilix", "-e", tui_cmd]
+    if emulator == "wezterm":
+        return ["wezterm", "start", "--", "bash", "-c", f"exec {tui_cmd}"]
     # x-terminal-emulator and unknown: try with --geometry; caller retries without.
     return ["x-terminal-emulator", f"--geometry={geo}", "-e", tui_cmd]
 

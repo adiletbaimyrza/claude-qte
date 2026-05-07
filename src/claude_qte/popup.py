@@ -74,6 +74,9 @@ def prompt_user(question: str) -> dict:
 
     saved_pos = load_popup_position()
     win_id = spawn_terminal_window(rid, question, saved_pos)
+    if not win_id:
+        safe_unlink(qfile)
+        return {"approved": False, "text": "no terminal emulator available"}
     play_notification()
 
     answer = None
