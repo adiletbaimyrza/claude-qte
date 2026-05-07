@@ -22,11 +22,40 @@ DIM_PAIR = 2
 TEXT_PAIR = 3
 PANEL_PAIR = 4
 SELECT_PAIR = 5
+DIFF_ADD_PAIR = 6   # green for + lines
+DIFF_DEL_PAIR = 7   # red for - lines
+DIFF_HUNK_PAIR = 8  # cyan for @@ headers
 
 OPTIONS = [
     ("1. Yes", True),
     ("2. No, and tell Claude what to do differently", False),
 ]
+
+
+def _parse_question(raw: str) -> tuple:
+    """Return (label, lines, is_diff) where lines is a list of (text, attr_key) pairs.
+
+    attr_key is one of: 'text', 'add', 'del', 'hunk', 'meta'.
+    """
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and parsed.get("__diff__"):
+            path = parsed.get("path", "")
+            diff_text = parsed.get("diff", "")
+            lines = []
+            for line in diff_text.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    lines.append((line, "add"))
+                elif line.startswith("-") and not line.startswith("---"):
+                    lines.append((line, "del"))
+                elif line.startswith("@@"):
+                    lines.append((line, "hunk"))
+                else:
+                    lines.append((line, "meta"))
+            return path, lines, True
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return "Tool use", [(line, "text") for line in raw.splitlines()], False
 
 
 def run_tui(rid: str) -> None:
@@ -40,7 +69,8 @@ def run_tui(rid: str) -> None:
     with open(qfile, encoding="utf-8") as fh:
         question = json.load(fh).get("question", "").strip()
 
-    answer = curses.wrapper(_tui_loop, question)
+    label, lines, is_diff = _parse_question(question)
+    answer = curses.wrapper(_tui_loop, label, lines, is_diff)
 
     with open(afile, "w", encoding="utf-8") as fh:
         json.dump(answer, fh)
@@ -60,9 +90,12 @@ def _init_colors() -> None:
     curses.init_pair(TEXT_PAIR, TEXT_FG, -1)
     curses.init_pair(PANEL_PAIR, TEXT_FG, PANEL_BG)
     curses.init_pair(SELECT_PAIR, ACCENT_FG, PANEL_BG)
+    curses.init_pair(DIFF_ADD_PAIR, 2, PANEL_BG)   # green on panel bg
+    curses.init_pair(DIFF_DEL_PAIR, 1, PANEL_BG)   # red on panel bg
+    curses.init_pair(DIFF_HUNK_PAIR, 6, PANEL_BG)  # cyan on panel bg
 
 
-def _tui_loop(stdscr, question: str) -> dict:
+def _tui_loop(stdscr, label: str, lines: list, is_diff: bool) -> dict:
     curses.curs_set(0)
     stdscr.keypad(True)
     _init_colors()
@@ -74,10 +107,13 @@ def _tui_loop(stdscr, question: str) -> dict:
 
     while True:
         stdscr.erase()
-        scroll = _draw_frame(stdscr, question, selected, scroll, custom_reply_mode, custom_text)
+        scroll, panel_max_h = _draw_frame(
+            stdscr, label, lines, is_diff, selected, scroll, custom_reply_mode, custom_text
+        )
         stdscr.refresh()
 
         ch = stdscr.get_wch()
+        total_lines = len(lines)
 
         if custom_reply_mode:
             if ch in ("\n", "\r", curses.KEY_ENTER):
@@ -93,8 +129,17 @@ def _tui_loop(stdscr, question: str) -> dict:
                 custom_text += ch
             continue
 
+        # Panel scroll (PgUp / PgDn / home / end)
+        if ch == curses.KEY_PPAGE:
+            scroll = max(0, scroll - panel_max_h)
+        elif ch == curses.KEY_NPAGE:
+            scroll = max(0, min(total_lines - panel_max_h, scroll + panel_max_h))
+        elif ch == curses.KEY_HOME:
+            scroll = 0
+        elif ch == curses.KEY_END:
+            scroll = max(0, total_lines - panel_max_h)
         # Option-select mode
-        if ch in (curses.KEY_UP, "k"):
+        elif ch in (curses.KEY_UP, "k"):
             selected = (selected - 1) % len(OPTIONS)
         elif ch in (curses.KEY_DOWN, "j"):
             selected = (selected + 1) % len(OPTIONS)
@@ -110,16 +155,32 @@ def _tui_loop(stdscr, question: str) -> dict:
             custom_reply_mode = True
 
 
+_DIFF_ATTR = {
+    "add": DIFF_ADD_PAIR,
+    "del": DIFF_DEL_PAIR,
+    "hunk": DIFF_HUNK_PAIR,
+    "meta": DIM_PAIR,
+    "text": TEXT_PAIR,
+}
+
+
 def _draw_frame(
-    stdscr, question: str, selected: int, scroll: int, custom_mode: bool, custom_text: str
-) -> int:
+    stdscr,
+    label: str,
+    lines: list,
+    is_diff: bool,
+    selected: int,
+    scroll: int,
+    custom_mode: bool,
+    custom_text: str,
+) -> tuple:
     h, w = stdscr.getmaxyx()
     if h < 12 or w < 50:
         with contextlib.suppress(curses.error):
             stdscr.addstr(
                 0, 0, "Window too small. Resize and try again.", curses.color_pair(ACCENT_PAIR)
             )
-        return scroll
+        return scroll, 3
 
     pad_x = max(2, (w - 96) // 2)
     inner_w = w - pad_x * 2
@@ -136,8 +197,8 @@ def _draw_frame(
     _safe_addstr(stdscr, y, pad_x, "─" * inner_w, curses.color_pair(DIM_PAIR))
     y += 2
 
-    # Section label
-    _safe_addstr(stdscr, y, pad_x, "Tool use", curses.color_pair(DIM_PAIR))
+    # Section label — file path for diffs, "Tool use" for plain text
+    _safe_addstr(stdscr, y, pad_x, label, curses.color_pair(DIM_PAIR))
     y += 1
 
     # Panel border (top)
@@ -150,29 +211,56 @@ def _draw_frame(
     footer_h = 4
     panel_max_h = max(3, h - panel_top - 1 - 4 - options_h - footer_h)
 
-    wrapped = _wrap(question, panel_w - 4)
-    visible = wrapped[scroll : scroll + panel_max_h]
+    # Build visible lines: for diffs use raw tagged lines; for plain text wrap.
+    if is_diff:
+        all_display = lines  # list of (text, attr_key)
+    else:
+        all_display = [
+            (wrapped_line, "text")
+            for raw_line, _ in lines
+            for wrapped_line in (_wrap(raw_line, panel_w - 4) or [""])
+        ]
+
+    visible = all_display[scroll : scroll + panel_max_h]
 
     for i in range(panel_max_h):
-        line = visible[i] if i < len(visible) else ""
-        text = "│ " + line.ljust(panel_w - 4) + " │"
-        attr = curses.color_pair(TEXT_PAIR) if i < len(visible) else curses.color_pair(DIM_PAIR)
-        _safe_addstr(stdscr, panel_top + i, pad_x, text, attr)
+        if i < len(visible):
+            line_text, attr_key = visible[i]
+            # Truncate to fit inside the panel borders
+            max_line_w = panel_w - 4
+            if len(line_text) > max_line_w:
+                line_text = line_text[:max_line_w]
+            padded = line_text.ljust(max_line_w)
+            pair = _DIFF_ATTR.get(attr_key, TEXT_PAIR)
+            border_attr = curses.color_pair(DIM_PAIR)
+            panel_attr = curses.color_pair(pair)
+            _safe_addstr(stdscr, panel_top + i, pad_x, "│ ", border_attr)
+            _safe_addstr(stdscr, panel_top + i, pad_x + 2, padded, panel_attr)
+            _safe_addstr(stdscr, panel_top + i, pad_x + 2 + max_line_w, " │", border_attr)
+        else:
+            _safe_addstr(
+                stdscr,
+                panel_top + i,
+                pad_x,
+                "│" + " " * (panel_w - 2) + "│",
+                curses.color_pair(DIM_PAIR),
+            )
 
     y = panel_top + panel_max_h
     _safe_addstr(stdscr, y, pad_x, "╰" + "─" * (panel_w - 2) + "╯", curses.color_pair(DIM_PAIR))
     y += 1
 
     # Scroll hint
-    if len(wrapped) > panel_max_h:
-        hint = f"({scroll + 1}–{min(len(wrapped), scroll + panel_max_h)} of {len(wrapped)} lines · PgUp/PgDn to scroll)"
+    total = len(all_display)
+    if total > panel_max_h:
+        hint = f"({scroll + 1}–{min(total, scroll + panel_max_h)} of {total} lines · PgUp/PgDn to scroll)"
         _safe_addstr(stdscr, y, pad_x, hint, curses.color_pair(DIM_PAIR))
     y += 1
 
     # Options
     _safe_addstr(stdscr, y, pad_x, "Do you want to proceed?", curses.color_pair(TEXT_PAIR))
     y += 1
-    for i, (label, _) in enumerate(OPTIONS):
+    for i, (opt_label, _) in enumerate(OPTIONS):
         is_sel = (i == selected) and not custom_mode
         caret = "❯ " if is_sel else "  "
         attr = (
@@ -180,7 +268,7 @@ def _draw_frame(
             if is_sel
             else curses.color_pair(TEXT_PAIR)
         )
-        _safe_addstr(stdscr, y, pad_x, caret + label, attr)
+        _safe_addstr(stdscr, y, pad_x, caret + opt_label, attr)
         y += 1
 
     # Custom reply input
@@ -199,10 +287,10 @@ def _draw_frame(
     if custom_mode:
         keys = "⏎ send to Claude   esc cancel"
     else:
-        keys = "↑↓ select   ⏎ confirm   1 allow   2 deny+reply   esc deny+reply"
+        keys = "PgUp/PgDn scroll   ↑↓ select   ⏎ confirm   1 allow   2 deny+reply   esc deny+reply"
     _safe_addstr(stdscr, footer_y, pad_x, keys, curses.color_pair(DIM_PAIR))
 
-    return scroll
+    return scroll, panel_max_h
 
 
 def _wrap(text: str, width: int) -> list:

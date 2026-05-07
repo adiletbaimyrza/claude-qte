@@ -192,18 +192,24 @@ def _parent_tty() -> str:
 
 
 def describe_tool(tool_name: str, tool_input: dict) -> str:
-    """Render a tool-use event as a human-readable question for the popup."""
+    """Render a tool-use event as a human-readable question for the popup.
+
+    For Write/Edit tools, returns a JSON-encoded diff payload so the TUI can
+    render colored unified-diff output. All other tools return plain text.
+    """
     if tool_name == "Bash":
         cmd = (tool_input.get("command") or "").strip()
         desc = (tool_input.get("description") or "").strip()
         return f"Bash — {desc}\n\n$ {cmd}" if desc else f"Bash\n\n$ {cmd}"
     if tool_name == "Edit":
         path = tool_input.get("file_path", "")
-        return f"Edit {path}"
+        diff = _edit_diff(path, tool_input.get("old_string", ""), tool_input.get("new_string", ""))
+        return json.dumps({"__diff__": True, "path": path, "diff": diff})
     if tool_name == "Write":
         path = tool_input.get("file_path", "")
-        size = len(tool_input.get("content") or "")
-        return f"Write {path} ({size} chars)"
+        new_content = tool_input.get("content") or ""
+        diff = _write_diff(path, new_content)
+        return json.dumps({"__diff__": True, "path": path, "diff": diff})
     if tool_name == "NotebookEdit":
         path = tool_input.get("notebook_path") or tool_input.get("file_path", "")
         return f"NotebookEdit {path}"
@@ -211,6 +217,38 @@ def describe_tool(tool_name: str, tool_input: dict) -> str:
     if len(detail) > 800:
         detail = detail[:800] + "…"
     return f"{tool_name}\n\n{detail}"
+
+
+def _edit_diff(path: str, old: str, new: str) -> str:
+    import difflib
+
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    chunks = list(
+        difflib.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm="")
+    )
+    if not chunks:
+        return f"(no changes to {path})"
+    return "".join(chunks)
+
+
+def _write_diff(path: str, new_content: str) -> str:
+    import difflib
+
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            old_lines = fh.readlines()
+    except FileNotFoundError:
+        old_lines = []
+
+    new_lines = new_content.splitlines(keepends=True)
+    fromfile = path if old_lines else "/dev/null"
+    chunks = list(
+        difflib.unified_diff(old_lines, new_lines, fromfile=fromfile, tofile=path, lineterm="")
+    )
+    if not chunks:
+        return f"(no changes to {path})"
+    return "".join(chunks)
 
 
 def call_gate(port: int, question: str):

@@ -73,7 +73,9 @@ def prompt_user(question: str) -> dict:
 
 def compute_window_size(question: str) -> tuple:
     """Pick (columns, rows) that fit the question without wasted space."""
-    paragraphs = question.splitlines() or [""]
+    # Diff payloads can be wide; use the raw diff lines for sizing.
+    display_text = _display_text(question)
+    paragraphs = display_text.splitlines() or [""]
     longest = max((len(p) for p in paragraphs), default=0)
 
     # Width: the longest line plus a little breathing room, clamped.
@@ -93,3 +95,14 @@ def compute_window_size(question: str) -> tuple:
 
     target_rows = max(MIN_ROWS, min(MAX_ROWS, CHROME_ROWS + wrapped_lines))
     return target_cols, target_rows
+
+
+def _display_text(question: str) -> str:
+    """Return the raw text used for sizing — for diff payloads, that's the diff body."""
+    try:
+        parsed = json.loads(question)
+        if isinstance(parsed, dict) and parsed.get("__diff__"):
+            return parsed.get("diff", "")
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return question

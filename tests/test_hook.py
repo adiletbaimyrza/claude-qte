@@ -16,13 +16,19 @@ class TestDescribeTool:
         out = describe_tool("Bash", {"command": "ls"})
         assert out.startswith("Bash\n\n$ ls")
 
-    def test_edit(self):
-        assert describe_tool("Edit", {"file_path": "/x/y.py"}) == "Edit /x/y.py"
+    def test_edit_returns_diff_payload(self):
+        out = json.loads(describe_tool("Edit", {"file_path": "/x/y.py", "old_string": "a", "new_string": "b"}))
+        assert out["__diff__"] is True
+        assert out["path"] == "/x/y.py"
+        assert "-a" in out["diff"]
+        assert "+b" in out["diff"]
 
-    def test_write_includes_size(self):
-        out = describe_tool("Write", {"file_path": "/a", "content": "abcde"})
-        assert "Write /a" in out
-        assert "(5 chars)" in out
+    def test_write_returns_diff_payload_for_new_file(self, tmp_path):
+        path = str(tmp_path / "new.txt")
+        out = json.loads(describe_tool("Write", {"file_path": path, "content": "hello\n"}))
+        assert out["__diff__"] is True
+        assert out["path"] == path
+        assert "+hello" in out["diff"]
 
     def test_notebook_edit_prefers_notebook_path(self):
         out = describe_tool(
