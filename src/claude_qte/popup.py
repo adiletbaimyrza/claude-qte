@@ -2,7 +2,7 @@
 
 When the gate receives an ``/ask`` request, ``prompt_user`` is called. It
 hands the question off to a subprocess running the curses TUI inside a fresh
-Terminal.app window, then polls a tmp file for the answer.
+terminal window, then polls a tmp file for the answer.
 
 Splitting this from :mod:`claude_qte.tui` lets us test sizing/layout
 helpers without dragging in curses.
