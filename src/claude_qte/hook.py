@@ -9,33 +9,12 @@ import os
 import subprocess
 import sys
 
+from claude_qte._platform import frontmost_terminal_tty, idle_seconds
 from claude_qte._runtime import ANSWER_TIMEOUT
 
 # How long the user can be away from the keyboard / off the terminal before
 # we assume they aren't watching and pop up the QTE window.
 USER_PRESENCE_IDLE_SECONDS = 20
-
-# AppleScript that returns the tty of the foreground session if the
-# frontmost app is a known terminal — otherwise an empty string.
-_FRONTMOST_TTY_SCRIPT = """
-tell application "System Events"
-    set frontApp to name of first process whose frontmost is true
-end tell
-if frontApp is "Terminal" then
-    try
-        tell application "Terminal"
-            return tty of selected tab of front window
-        end tell
-    end try
-else if frontApp is "iTerm2" or frontApp is "iTerm" then
-    try
-        tell application "iTerm"
-            return tty of current session of current window
-        end tell
-    end try
-end if
-return ""
-"""
 
 
 def run_hook(port: int) -> None:
@@ -101,32 +80,13 @@ def emit_decision(decision: str, reason: str = "") -> None:
 def user_is_present() -> bool:
     """True iff the user is at the keyboard AND looking at the terminal where
     Claude Code is running."""
-    if _idle_seconds() > USER_PRESENCE_IDLE_SECONDS:
+    if idle_seconds() > USER_PRESENCE_IDLE_SECONDS:
         return False
     parent_tty = _parent_tty()
     if not parent_tty:
         return False
-    front_tty = _frontmost_terminal_tty()
+    front_tty = frontmost_terminal_tty()
     return bool(front_tty) and parent_tty == front_tty
-
-
-def _idle_seconds() -> float:
-    try:
-        out = subprocess.run(
-            ["ioreg", "-c", "IOHIDSystem"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout
-    except (subprocess.SubprocessError, FileNotFoundError):
-        return 0.0
-    for line in out.splitlines():
-        if "HIDIdleTime" in line:
-            try:
-                return int(line.split("=")[-1].strip()) / 1e9
-            except ValueError:
-                return 0.0
-    return 0.0
 
 
 def _parent_tty() -> str:
@@ -143,19 +103,6 @@ def _parent_tty() -> str:
     if not out or out == "?":
         return ""
     return out if out.startswith("/dev/") else f"/dev/{out}"
-
-
-def _frontmost_terminal_tty() -> str:
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", _FRONTMOST_TTY_SCRIPT],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        return result.stdout.strip()
-    except (subprocess.SubprocessError, FileNotFoundError):
-        return ""
 
 
 def describe_tool(tool_name: str, tool_input: dict) -> str:

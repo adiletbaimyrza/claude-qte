@@ -7,7 +7,6 @@ and tears the gate down on exit.
 
 import contextlib
 import os
-import platform
 import signal
 import socket
 import subprocess
@@ -21,9 +20,6 @@ def run_command(argv: list) -> None:
     """Spawn a per-session gate, exec ``argv``, kill the gate on exit."""
     if not argv:
         sys.stderr.write("Usage: claude-qte run <command> [args...]\n")
-        sys.exit(2)
-    if platform.system() != "Darwin":
-        sys.stderr.write("claude-qte currently supports macOS only.\n")
         sys.exit(2)
 
     port = pick_free_port()

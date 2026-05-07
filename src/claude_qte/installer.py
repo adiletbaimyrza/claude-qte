@@ -6,12 +6,12 @@ always-on LaunchAgent that 0.1.x installed.
 """
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
 
 from claude_qte import settings as settings_mod
+from claude_qte._platform import IS_MACOS
 from claude_qte.settings import SETTINGS_PATH
 
 INSTALL_BIN_DIR = os.path.expanduser("~/.local/bin")
@@ -24,10 +24,6 @@ LEGACY_PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{LEGACY_PLIST_LA
 
 
 def run_install() -> None:
-    if platform.system() != "Darwin":
-        sys.stderr.write("claude-qte install is macOS-only.\n")
-        sys.exit(2)
-
     bin_path = _install_binary()
     legacy_removed = remove_legacy_launch_agent()
     settings_mod.patch_for_hook(bin_path)
@@ -42,7 +38,7 @@ def run_install() -> None:
   • Binary:  {bin_path}
   • Hook in: {SETTINGS_PATH}
 {legacy_note}
-  Add this to your shell profile (e.g. ~/.zshrc) so the gate runs only
+  Add this to your shell profile (e.g. ~/.bashrc or ~/.zshrc) so the gate runs only
   while you're in a Claude Code session:
 
       alias claude='{bin_path} run claude'
@@ -56,10 +52,6 @@ def run_install() -> None:
 
 
 def run_uninstall() -> None:
-    if platform.system() != "Darwin":
-        sys.stderr.write("claude-qte uninstall is macOS-only.\n")
-        sys.exit(2)
-
     if remove_legacy_launch_agent():
         pass  # message already printed
 
@@ -95,12 +87,13 @@ def _install_binary() -> str:
         if os.path.realpath(src) != os.path.realpath(target):
             shutil.copy2(src, target)
         os.chmod(target, 0o755)
-        # Strip Gatekeeper quarantine so the binary runs without "are you sure?".
-        subprocess.run(
-            ["xattr", "-d", "com.apple.quarantine", target],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if IS_MACOS:
+            # Strip Gatekeeper quarantine so the binary runs without "are you sure?".
+            subprocess.run(
+                ["xattr", "-d", "com.apple.quarantine", target],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         return target
 
     invoker = os.path.realpath(sys.argv[0]) if sys.argv else ""
@@ -122,6 +115,8 @@ def remove_legacy_launch_agent() -> bool:
 
     Returns True if a legacy plist was found and removed.
     """
+    if not IS_MACOS:
+        return False
     if not os.path.exists(LEGACY_PLIST_PATH):
         return False
     subprocess.run(

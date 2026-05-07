@@ -6,9 +6,6 @@ cheap and used to detect that the gate is up.
 
 import json
 import os
-import platform
-import shutil
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -82,13 +79,6 @@ class ApprovalHandler(BaseHTTPRequestHandler):
 
 
 def run_server(port: int, parent_pid: int = 0, quiet: bool = False) -> None:
-    if platform.system() != "Darwin":
-        sys.stderr.write("claude-qte currently supports macOS only.\n")
-        sys.exit(2)
-    if not shutil.which("osascript"):
-        sys.stderr.write("osascript not found. claude-qte requires macOS Terminal scripting.\n")
-        sys.exit(2)
-
     os.makedirs(TMP_DIR, exist_ok=True)
 
     # If launched with --parent-pid (e.g. from `claude-qte run`), exit as soon

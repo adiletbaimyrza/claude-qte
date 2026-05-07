@@ -1,4 +1,4 @@
-name: Build macOS binary
+name: CI
 
 on:
   push:
@@ -30,9 +30,12 @@ jobs:
         run: ruff format --check
 
   test:
-    name: Tests
+    name: Tests (${{ matrix.os }})
     needs: lint
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,9 +83,40 @@ jobs:
           path: dist/claude-qte-macos-arm64
           if-no-files-found: error
 
+  build-linux:
+    name: Build (linux-x86_64)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+          pip install .
+
+      - name: Build with PyInstaller
+        run: pyinstaller --clean --noconfirm claude_qte.spec
+
+      - name: Rename artifact
+        run: mv dist/claude-qte dist/claude-qte-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-qte-linux-x86_64
+          path: dist/claude-qte-linux-x86_64
+          if-no-files-found: error
+
   release:
     name: Attach binary to release
-    needs: build
+    needs: [build, build-linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

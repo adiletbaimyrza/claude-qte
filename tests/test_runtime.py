@@ -3,7 +3,6 @@
 import os
 
 from claude_qte._runtime import (
-    applescript_string,
     next_request_id,
     safe_unlink,
     shell_quote,
@@ -31,20 +30,6 @@ class TestShellQuote:
     def test_dollar_sign_quoted(self):
         # Important: prevents shell variable expansion
         assert shell_quote("$VAR") == "'$VAR'"
-
-
-class TestApplescriptString:
-    def test_simple_quoted(self):
-        assert applescript_string("hello") == '"hello"'
-
-    def test_double_quote_escaped(self):
-        assert applescript_string('say "hi"') == '"say \\"hi\\""'
-
-    def test_backslash_escaped(self):
-        assert applescript_string("a\\b") == '"a\\\\b"'
-
-    def test_empty_string(self):
-        assert applescript_string("") == '""'
 
 
 class TestNextRequestId:

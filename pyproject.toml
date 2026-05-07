@@ -12,9 +12,9 @@ authors = [{ name = "Adilet Baimyrza" }]
 keywords = ["claude", "claude-code", "approval", "permission-gate"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Environment :: MacOS X",
     "Intended Audience :: Developers",
-    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

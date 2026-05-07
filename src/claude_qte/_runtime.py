@@ -2,7 +2,6 @@
 
 import contextlib
 import os
-import subprocess
 import sys
 import tempfile
 import threading
@@ -41,22 +40,6 @@ def shell_quote(s: str) -> str:
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
 
-def applescript_string(s: str) -> str:
-    """Quote a string for AppleScript."""
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
 def safe_unlink(path: str) -> None:
     with contextlib.suppress(FileNotFoundError):
         os.unlink(path)
-
-
-def osascript(script: str, *, capture: bool = False, timeout: float | None = None):
-    """Run an AppleScript snippet via osascript. Returns a CompletedProcess."""
-    return subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=capture,
-        text=True,
-        check=False,
-        timeout=timeout,
-    )

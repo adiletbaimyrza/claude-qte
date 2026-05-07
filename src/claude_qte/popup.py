@@ -10,18 +10,15 @@ helpers without dragging in curses.
 
 import json
 import os
-import subprocess
 import textwrap
 import time
 
+from claude_qte._platform import close_terminal_window, spawn_terminal_window
 from claude_qte._runtime import (
     ANSWER_TIMEOUT,
     TMP_DIR,
-    applescript_string,
-    current_invocation,
     next_request_id,
     safe_unlink,
-    shell_quote,
 )
 
 # Fixed UI rows around the question panel: header (2) + spacer (1) +
@@ -96,73 +93,3 @@ def compute_window_size(question: str) -> tuple:
 
     target_rows = max(MIN_ROWS, min(MAX_ROWS, CHROME_ROWS + wrapped_lines))
     return target_cols, target_rows
-
-
-def spawn_terminal_window(rid: str, question: str) -> str:
-    """Open a Terminal.app window sized to the question, centered on screen.
-
-    Returns the AppleScript window id (as a string), used later to close
-    exactly that window without ambiguity.
-    """
-    cols, rows = compute_window_size(question)
-
-    binary = current_invocation()
-    quoted = " ".join(shell_quote(part) for part in [*binary, "--tui", rid])
-    # `exec` replaces the shell with our Python TUI, so when Python exits
-    # there is no leftover shell process in the tty.
-    inner = f"clear; exec {quoted}"
-
-    applescript = f"""
-on run
-    tell application "Finder"
-        set sb to bounds of window of desktop
-    end tell
-    set sw to (item 3 of sb) - (item 1 of sb)
-    set sh to (item 4 of sb) - (item 2 of sb)
-
-    tell application "Terminal"
-        activate
-        set newTab to do script {applescript_string(inner)}
-        delay 0.05
-        try
-            set targetWindow to first window where tabs contains newTab
-            set number of columns of targetWindow to {cols}
-            set number of rows of targetWindow to {rows}
-            delay 0.02
-            set wb to bounds of targetWindow
-            set ww to (item 3 of wb) - (item 1 of wb)
-            set wh to (item 4 of wb) - (item 2 of wb)
-            set wx to ((sw - ww) / 2) as integer
-            set wy to ((sh - wh) / 2) as integer
-            set position of targetWindow to {{wx, wy}}
-            return (id of targetWindow as string)
-        on error
-            return ""
-        end try
-    end tell
-end run
-"""
-    proc = subprocess.run(
-        ["osascript", "-e", applescript],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return proc.stdout.strip()
-
-
-def close_terminal_window(window_id: str) -> None:
-    if not window_id:
-        return
-    script = f"""
-tell application "Terminal"
-    try
-        close (every window whose id is {window_id}) saving no
-    end try
-end tell
-"""
-    subprocess.Popen(
-        ["osascript", "-e", script],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )

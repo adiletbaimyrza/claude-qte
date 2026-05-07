@@ -20,6 +20,7 @@ a = Analysis(
         'claude_qte.installer',
         'claude_qte.settings',
         'claude_qte._runtime',
+        'claude_qte._platform',
     ],
     hookspath=[],
     hooksconfig={},
