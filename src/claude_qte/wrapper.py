@@ -8,12 +8,10 @@ and tears the gate down on exit.
 import contextlib
 import os
 import signal
-import socket
 import subprocess
 import sys
-import time
 
-from claude_qte._runtime import current_invocation
+from claude_qte._runtime import TMP_DIR, current_invocation, pick_free_port, wait_for_port
 
 
 def run_command(argv: list) -> None:
@@ -38,6 +36,12 @@ def run_command(argv: list) -> None:
             gate_proc.terminate()
         sys.stderr.write(f"claude-qte: gate did not start on port {port}\n")
         sys.exit(1)
+
+    # Write port file so hook.py can discover the gate without the env var.
+    os.makedirs(TMP_DIR, exist_ok=True)
+    port_file = os.path.join(TMP_DIR, f"gate-{os.getpid()}.port")
+    with contextlib.suppress(OSError), open(port_file, "w") as fh:
+        fh.write(str(port))
 
     def _cleanup_gate():
         if gate_proc.poll() is None:
@@ -68,22 +72,3 @@ def run_command(argv: list) -> None:
         _cleanup_gate()
 
     sys.exit(rc)
-
-
-def pick_free_port() -> int:
-    """Bind ``:0`` and return whatever port the OS hands back. Brief race
-    window between release and the gate's bind — fine for a local dev tool."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def wait_for_port(port: int, timeout: float = 5.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                return True
-        except (ConnectionRefusedError, OSError):
-            time.sleep(0.05)
-    return False

@@ -2,6 +2,7 @@
 
 import contextlib
 import os
+import socket
 import sys
 import tempfile
 import threading
@@ -43,3 +44,21 @@ def shell_quote(s: str) -> str:
 def safe_unlink(path: str) -> None:
     with contextlib.suppress(FileNotFoundError):
         os.unlink(path)
+
+
+def pick_free_port() -> int:
+    """Bind ``:0`` and return the OS-assigned port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def wait_for_port(port: int, timeout: float = 5.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except (ConnectionRefusedError, OSError):
+            time.sleep(0.05)
+    return False

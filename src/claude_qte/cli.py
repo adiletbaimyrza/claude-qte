@@ -1,7 +1,6 @@
 """Argparse + dispatch — entry point for ``claude-qte`` and ``python -m claude_qte``."""
 
 import argparse
-import os
 
 from claude_qte import __version__
 
@@ -37,12 +36,9 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.cmd == "hook":
-        # Per-session wrapper sets CLAUDE_QTE_PORT. Honor it over the default.
         from claude_qte.hook import run_hook
 
-        env_port = os.environ.get("CLAUDE_QTE_PORT")
-        port = int(env_port) if env_port and env_port.isdigit() else args.port
-        run_hook(port)
+        run_hook()
     elif args.cmd == "install":
         from claude_qte.installer import run_install
 

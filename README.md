@@ -22,17 +22,22 @@ That single command:
 2. Drops it in `~/.local/bin/claude-qte`.
 3. Adds a `PreToolUse` hook to `~/.claude/settings.json` so Claude Code
    itself enforces the gate — nothing for Claude to "remember to do."
+4. Appends a note to `~/.claude/CLAUDE.md` so Claude understands denial
+   messages from the gate.
 
-Then add this to your shell profile (e.g. `~/.bashrc` or `~/.zshrc`):
+That's it — the gate **auto-starts on first tool use**, so no alias is
+required. Just run `claude` as usual.
+
+**Optional alias** — for zero first-use delay, add to your shell profile
+(e.g. `~/.bashrc` or `~/.zshrc`):
 
 ```sh
 alias claude='~/.local/bin/claude-qte run claude'
 ```
 
-Open a new terminal and `claude` will start the gate alongside it. The
-gate runs only while that Claude Code session is alive — when claude exits
-(normal exit, ctrl-c, terminal closed, even SIGKILL), the gate is killed
-with it.
+With the alias the gate starts before Claude Code and is killed with it;
+without it the gate is lazily spawned on the first tool call (~200–400 ms
+one-time delay per session).
 
 Each session gets its own gate on a fresh free port, so multiple parallel
 `claude` sessions don't fight over `:9999`.

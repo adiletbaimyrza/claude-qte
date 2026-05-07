@@ -2,6 +2,7 @@
 
 import json
 
+import claude_qte.hook as hook_mod
 from claude_qte.hook import describe_tool, emit_decision, is_gate_self_call
 
 
@@ -63,6 +64,85 @@ class TestIsGateSelfCall:
 
     def test_empty_event(self):
         assert is_gate_self_call({}, 9999) is False
+
+
+class TestPingGate:
+    def test_returns_true_on_ok_response(self, monkeypatch):
+        class _FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        import urllib.request
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: _FakeResp())
+        assert hook_mod._ping_gate(9999) is True
+
+    def test_returns_false_on_connection_error(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        def _raise(*a, **kw):
+            raise urllib.error.URLError("refused")
+
+        monkeypatch.setattr(urllib.request, "urlopen", _raise)
+        assert hook_mod._ping_gate(9999) is False
+
+
+class TestEnsureGate:
+    def test_uses_env_var_when_set(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("CLAUDE_QTE_PORT", "8888")
+        monkeypatch.setattr(hook_mod, "_ping_gate", lambda port: True)
+        monkeypatch.setattr(hook_mod, "TMP_DIR", str(tmp_path))
+        result = hook_mod._ensure_gate(ppid=9999)
+        assert result == 8888
+
+    def test_uses_port_file_when_valid(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CLAUDE_QTE_PORT", raising=False)
+        port_file = tmp_path / "gate-1234.port"
+        port_file.write_text("7777")
+        monkeypatch.setattr(hook_mod, "TMP_DIR", str(tmp_path))
+        monkeypatch.setattr(hook_mod, "_ping_gate", lambda port: True)
+        result = hook_mod._ensure_gate(ppid=1234)
+        assert result == 7777
+
+    def test_spawns_when_port_file_stale(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CLAUDE_QTE_PORT", raising=False)
+        port_file = tmp_path / "gate-1234.port"
+        port_file.write_text("7777")
+        monkeypatch.setattr(hook_mod, "TMP_DIR", str(tmp_path))
+        # ping always fails → stale
+        monkeypatch.setattr(hook_mod, "_ping_gate", lambda port: False)
+        spawned = {}
+        monkeypatch.setattr(
+            hook_mod,
+            "_spawn_gate",
+            lambda port, ppid: spawned.update({"port": port, "ppid": ppid}) or True,
+        )
+        monkeypatch.setattr(hook_mod, "pick_free_port", lambda: 6666)
+        result = hook_mod._ensure_gate(ppid=1234)
+        assert result == 6666
+        assert spawned["ppid"] == 1234
+
+    def test_spawns_when_no_port_file(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CLAUDE_QTE_PORT", raising=False)
+        monkeypatch.setattr(hook_mod, "TMP_DIR", str(tmp_path))
+        monkeypatch.setattr(hook_mod, "_ping_gate", lambda port: False)
+        monkeypatch.setattr(hook_mod, "_spawn_gate", lambda port, ppid: True)
+        monkeypatch.setattr(hook_mod, "pick_free_port", lambda: 5555)
+        result = hook_mod._ensure_gate(ppid=9999)
+        assert result == 5555
+
+    def test_returns_none_when_spawn_fails(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CLAUDE_QTE_PORT", raising=False)
+        monkeypatch.setattr(hook_mod, "TMP_DIR", str(tmp_path))
+        monkeypatch.setattr(hook_mod, "_ping_gate", lambda port: False)
+        monkeypatch.setattr(hook_mod, "_spawn_gate", lambda port, ppid: False)
+        monkeypatch.setattr(hook_mod, "pick_free_port", lambda: 4444)
+        result = hook_mod._ensure_gate(ppid=9999)
+        assert result is None
 
 
 class TestEmitDecision:

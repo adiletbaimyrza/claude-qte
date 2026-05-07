@@ -22,11 +22,80 @@ INSTALL_BIN_NAME = "claude-qte"
 LEGACY_PLIST_LABEL = "com.claudeqte.gate"
 LEGACY_PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{LEGACY_PLIST_LABEL}.plist")
 
+CLAUDE_MD_PATH = os.path.expanduser("~/.claude/CLAUDE.md")
+CLAUDE_MD_BEGIN = "<!-- claude-qte begin -->"
+CLAUDE_MD_END = "<!-- claude-qte end -->"
+_CLAUDE_MD_BLOCK = """\
+<!-- claude-qte begin -->
+## claude-qte (approval gate)
+
+claude-qte intercepts tool-use permission prompts. When you are denied,
+the reason is typed by the user in a popup — read it carefully and adjust
+your approach accordingly. Do not retry the same action without addressing
+the stated reason.
+
+The PreToolUse hook handles routing automatically; you do not need to call
+the gate directly.
+<!-- claude-qte end -->"""
+
+
+def patch_claude_md() -> None:
+    """Append (or replace) the claude-qte block in ~/.claude/CLAUDE.md."""
+    try:
+        if os.path.exists(CLAUDE_MD_PATH):
+            with open(CLAUDE_MD_PATH, encoding="utf-8") as fh:
+                existing = fh.read()
+        else:
+            existing = ""
+    except OSError:
+        existing = ""
+
+    if CLAUDE_MD_BEGIN in existing:
+        start = existing.index(CLAUDE_MD_BEGIN)
+        end = existing.find(CLAUDE_MD_END, start)
+        if end != -1:
+            end += len(CLAUDE_MD_END)
+            new_content = existing[:start] + _CLAUDE_MD_BLOCK + existing[end:]
+        else:
+            new_content = existing[:start] + _CLAUDE_MD_BLOCK
+    else:
+        sep = "\n\n" if existing and not existing.endswith("\n\n") else ""
+        new_content = existing + sep + _CLAUDE_MD_BLOCK + "\n"
+
+    os.makedirs(os.path.dirname(CLAUDE_MD_PATH), exist_ok=True)
+    with open(CLAUDE_MD_PATH, "w", encoding="utf-8") as fh:
+        fh.write(new_content)
+
+
+def unpatch_claude_md() -> None:
+    """Remove the claude-qte block from ~/.claude/CLAUDE.md if present."""
+    if not os.path.exists(CLAUDE_MD_PATH):
+        return
+    try:
+        with open(CLAUDE_MD_PATH, encoding="utf-8") as fh:
+            content = fh.read()
+    except OSError:
+        return
+    if CLAUDE_MD_BEGIN not in content:
+        return
+    start = content.index(CLAUDE_MD_BEGIN)
+    end = content.find(CLAUDE_MD_END, start)
+    if end == -1:
+        new_content = content[:start].rstrip() + "\n"
+    else:
+        end += len(CLAUDE_MD_END)
+        new_content = (content[:start] + content[end:]).strip()
+        if new_content:
+            new_content += "\n"
+    with open(CLAUDE_MD_PATH, "w", encoding="utf-8") as fh:
+        fh.write(new_content)
+
 
 def run_install() -> None:
     bin_path = _install_binary()
     legacy_removed = remove_legacy_launch_agent()
     settings_mod.patch_for_hook(bin_path)
+    patch_claude_md()
 
     legacy_note = ""
     if legacy_removed:
@@ -38,14 +107,14 @@ def run_install() -> None:
   • Binary:  {bin_path}
   • Hook in: {SETTINGS_PATH}
 {legacy_note}
-  Add this to your shell profile (e.g. ~/.bashrc or ~/.zshrc) so the gate runs only
-  while you're in a Claude Code session:
+  The gate auto-starts on first tool use — no alias required.
+
+  For faster startup (no first-use delay), optionally add to your shell
+  profile (e.g. ~/.bashrc or ~/.zshrc):
 
       alias claude='{bin_path} run claude'
 
-  Open a new terminal, run `claude`, and the gate will start with it and
-  exit when you leave. When you wander off and Claude needs permission,
-  the QTE popup will appear.
+  Open a new terminal and run `claude` to start.
 """)
     if INSTALL_BIN_DIR not in os.environ.get("PATH", "").split(":"):
         print(f"  Note: add {INSTALL_BIN_DIR} to your PATH to run `claude-qte` directly.\n")
@@ -57,6 +126,8 @@ def run_uninstall() -> None:
 
     if settings_mod.unpatch_hook():
         print(f"  Removed claude-qte hook from {SETTINGS_PATH}")
+
+    unpatch_claude_md()
 
     bin_path = os.path.join(INSTALL_BIN_DIR, INSTALL_BIN_NAME)
     if os.path.exists(bin_path):

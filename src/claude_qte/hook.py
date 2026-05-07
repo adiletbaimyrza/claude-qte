@@ -10,27 +10,29 @@ import subprocess
 import sys
 
 from claude_qte._platform import frontmost_terminal_tty, idle_seconds
-from claude_qte._runtime import ANSWER_TIMEOUT
+from claude_qte._runtime import ANSWER_TIMEOUT, TMP_DIR, pick_free_port, wait_for_port
 
 # How long the user can be away from the keyboard / off the terminal before
 # we assume they aren't watching and pop up the QTE window.
 USER_PRESENCE_IDLE_SECONDS = 20
 
 
-def run_hook(port: int) -> None:
+def run_hook() -> None:
     raw = sys.stdin.read()
     try:
         event = json.loads(raw) if raw.strip() else {}
     except json.JSONDecodeError:
-        # Malformed input — fail safe to native flow.
         emit_decision("ask")
         return
+
+    ppid = os.getppid()
+    port = _ensure_gate(ppid)
 
     # The user may instruct Claude (via CLAUDE.md) to curl the gate before
     # each action. Installing claude-qte already implies consent for that
     # self-call, so auto-allow it — the *actual* command will hit the hook
     # again and get prompted there.
-    if is_gate_self_call(event, port):
+    if port and is_gate_self_call(event, port):
         emit_decision("allow", "claude-qte gate self-call")
         return
 
@@ -38,12 +40,15 @@ def run_hook(port: int) -> None:
         emit_decision("ask")
         return
 
+    if port is None:
+        # Gate unavailable — fail safe to native flow.
+        emit_decision("ask")
+        return
+
     question = describe_tool(event.get("tool_name", ""), event.get("tool_input", {}))
     answer = call_gate(port, question)
 
     if answer is None:
-        # Gate unreachable — fail safe to native flow so Claude Code keeps
-        # working even if the user hasn't started the gate yet.
         emit_decision("ask")
         return
 
@@ -51,6 +56,77 @@ def run_hook(port: int) -> None:
         emit_decision("allow", answer.get("answer") or "approved via claude-qte")
     else:
         emit_decision("deny", answer.get("answer") or "denied via claude-qte")
+
+
+def _gate_port_file(ppid: int) -> str:
+    return os.path.join(TMP_DIR, f"gate-{ppid}.port")
+
+
+def _ping_gate(port: int) -> bool:
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/ping", timeout=1):
+            return True
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def _spawn_gate(port: int, ppid: int) -> bool:
+    """Spawn the gate on *port* and wait up to 5 s for it to come up."""
+    from claude_qte._runtime import current_invocation
+
+    binary = current_invocation()
+    try:
+        subprocess.Popen(
+            [*binary, "--port", str(port), "--parent-pid", str(ppid), "--quiet"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except (FileNotFoundError, PermissionError):
+        return False
+
+    if not wait_for_port(port, timeout=5.0):
+        return False
+
+    port_file = _gate_port_file(ppid)
+    try:
+        os.makedirs(TMP_DIR, exist_ok=True)
+        with open(port_file, "w") as fh:
+            fh.write(str(port))
+    except OSError:
+        pass
+    return True
+
+
+def _ensure_gate(ppid: int) -> int | None:
+    """Return a live gate port for *ppid*, lazily spawning one if needed."""
+    # Fast path: env var set by the wrapper.
+    env_val = os.environ.get("CLAUDE_QTE_PORT", "")
+    if env_val.isdigit():
+        port = int(env_val)
+        if _ping_gate(port):
+            return port
+
+    # Second path: port file written by wrapper or a prior lazy-spawn.
+    port_file = _gate_port_file(ppid)
+    try:
+        with open(port_file) as fh:
+            raw = fh.read().strip()
+        if raw.isdigit():
+            port = int(raw)
+            if _ping_gate(port):
+                return port
+    except OSError:
+        pass
+
+    # Lazy spawn: no running gate found — start one now.
+    port = pick_free_port()
+    if _spawn_gate(port, ppid):
+        return port
+    return None
 
 
 def is_gate_self_call(event: dict, port: int) -> bool:
