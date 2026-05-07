@@ -210,12 +210,30 @@ def _detect_linux_terminal() -> str | None:
     return None
 
 
+def _is_x11_available() -> bool:
+    return bool(os.environ.get("DISPLAY"))
+
+
+def _find_pty_from_pid(pid_str: str) -> str:
+    """Scan /proc/<pid>/fd for a pts symlink; return the target path or ''."""
+    try:
+        fd_dir = f"/proc/{int(pid_str)}/fd"
+        if not os.path.isdir(fd_dir):
+            return ""
+        for fd_name in os.listdir(fd_dir):
+            with contextlib.suppress(OSError):
+                target = os.readlink(os.path.join(fd_dir, fd_name))
+                if target.startswith("/dev/pts/"):
+                    return target
+    except (ValueError, OSError, PermissionError):
+        pass
+    return ""
+
+
 def _idle_seconds_linux() -> float:
     # xprintidle only works under X11; on Wayland we conservatively return 0.0
     # so that user_is_present() continues to the tty comparison check.
-    if not os.environ.get("DISPLAY"):
-        return 0.0
-    if not shutil.which("xprintidle"):
+    if not _is_x11_available():
         return 0.0
     try:
         out = subprocess.run(
@@ -231,9 +249,7 @@ def _idle_seconds_linux() -> float:
 
 def _frontmost_terminal_tty_linux() -> str:
     """Return the tty of the focused terminal window, or '' if undetectable."""
-    if not os.environ.get("DISPLAY"):
-        return ""
-    if not shutil.which("xdotool"):
+    if not _is_x11_available():
         return ""
     try:
         name_out = subprocess.run(
@@ -258,20 +274,9 @@ def _frontmost_terminal_tty_linux() -> str:
             text=True,
             timeout=2,
         )
-        win_pid = pid_out.stdout.strip()
-        if not win_pid:
-            return ""
-        fd_dir = f"/proc/{win_pid}/fd"
-        if not os.path.isdir(fd_dir):
-            return ""
-        for fd_name in os.listdir(fd_dir):
-            with contextlib.suppress(OSError):
-                target = os.readlink(os.path.join(fd_dir, fd_name))
-                if target.startswith("/dev/pts/"):
-                    return target
-    except (subprocess.SubprocessError, FileNotFoundError, PermissionError):
-        pass
-    return ""
+        return _find_pty_from_pid(pid_out.stdout.strip())
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return ""
 
 
 def _build_terminal_cmd_linux(emulator: str, cols: int, rows: int, tui_cmd: str) -> list[str]:
@@ -305,8 +310,6 @@ def _center_window_linux(cols: int, rows: int) -> None:
     """Best-effort X11-only window centering via wmctrl. Silently ignored on Wayland."""
     if os.environ.get("WAYLAND_DISPLAY"):
         return
-    if not shutil.which("wmctrl") or not shutil.which("xdpyinfo"):
-        return
     try:
         info = subprocess.run(["xdpyinfo"], capture_output=True, text=True, timeout=2).stdout
         screen_w = screen_h = 0
@@ -318,9 +321,8 @@ def _center_window_linux(cols: int, rows: int) -> None:
                 break
         if not screen_w:
             return
-        # Approximate pixel size: 8px per col, 16px per row (good enough for centering).
-        win_w = cols * 8
-        win_h = rows * 16
+        win_w = cols * 8  # ~8px per column
+        win_h = rows * 16  # ~16px per row
         cx = max(0, (screen_w - win_w) // 2)
         cy = max(0, (screen_h - win_h) // 2)
         subprocess.run(
@@ -384,10 +386,15 @@ def _close_terminal_window_linux(pid_str: str) -> None:
         return
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.kill(pid, signal.SIGTERM)
-    time.sleep(0.15)
-    # If the process is still alive, escalate to SIGKILL.
+    # Poll briefly; SIGKILL only if the process hasn't exited yet.
+    deadline = time.monotonic() + 0.3
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(0.05)
     with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.kill(pid, 0)  # raises ProcessLookupError if already gone
         os.kill(pid, signal.SIGKILL)
 
 
