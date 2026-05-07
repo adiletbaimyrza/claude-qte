@@ -22,8 +22,8 @@ DIM_PAIR = 2
 TEXT_PAIR = 3
 PANEL_PAIR = 4
 SELECT_PAIR = 5
-DIFF_ADD_PAIR = 6   # green for + lines
-DIFF_DEL_PAIR = 7   # red for - lines
+DIFF_ADD_PAIR = 6  # green for + lines
+DIFF_DEL_PAIR = 7  # red for - lines
 DIFF_HUNK_PAIR = 8  # cyan for @@ headers
 
 OPTIONS = [
@@ -90,8 +90,8 @@ def _init_colors() -> None:
     curses.init_pair(TEXT_PAIR, TEXT_FG, -1)
     curses.init_pair(PANEL_PAIR, TEXT_FG, PANEL_BG)
     curses.init_pair(SELECT_PAIR, ACCENT_FG, PANEL_BG)
-    curses.init_pair(DIFF_ADD_PAIR, 2, PANEL_BG)   # green on panel bg
-    curses.init_pair(DIFF_DEL_PAIR, 1, PANEL_BG)   # red on panel bg
+    curses.init_pair(DIFF_ADD_PAIR, 2, PANEL_BG)  # green on panel bg
+    curses.init_pair(DIFF_DEL_PAIR, 1, PANEL_BG)  # red on panel bg
     curses.init_pair(DIFF_HUNK_PAIR, 6, PANEL_BG)  # cyan on panel bg
 
 

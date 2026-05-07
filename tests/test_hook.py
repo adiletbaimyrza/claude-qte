@@ -17,7 +17,9 @@ class TestDescribeTool:
         assert out.startswith("Bash\n\n$ ls")
 
     def test_edit_returns_diff_payload(self):
-        out = json.loads(describe_tool("Edit", {"file_path": "/x/y.py", "old_string": "a", "new_string": "b"}))
+        out = json.loads(
+            describe_tool("Edit", {"file_path": "/x/y.py", "old_string": "a", "new_string": "b"})
+        )
         assert out["__diff__"] is True
         assert out["path"] == "/x/y.py"
         assert "-a" in out["diff"]
