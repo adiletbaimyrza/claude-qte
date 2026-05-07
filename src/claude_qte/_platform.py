@@ -98,10 +98,13 @@ def _frontmost_terminal_tty_macos() -> str:
         return ""
 
 
-def _spawn_terminal_window_macos(rid: str, question: str) -> str:
-    """Open a Terminal.app window sized to the question, centered on screen.
+def _spawn_terminal_window_macos(
+    rid: str, question: str, position: tuple[int, int] | None = None
+) -> str:
+    """Open a Terminal.app window sized to the question.
 
-    Returns the AppleScript window id (as a string) used later to close it.
+    If *position* is given as (x, y) the window is placed there; otherwise it
+    is centered on screen.  Returns the AppleScript window id (as a string).
     """
     from claude_qte._runtime import current_invocation, shell_quote
     from claude_qte.popup import compute_window_size
@@ -110,6 +113,19 @@ def _spawn_terminal_window_macos(rid: str, question: str) -> str:
     binary = current_invocation()
     quoted = " ".join(shell_quote(part) for part in [*binary, "--tui", rid])
     inner = f"clear; exec {quoted}"
+
+    if position is not None:
+        px, py = position
+        position_script = f"set position of targetWindow to {{{px}, {py}}}"
+    else:
+        position_script = (
+            "set wb to bounds of targetWindow\n"
+            "            set ww to (item 3 of wb) - (item 1 of wb)\n"
+            "            set wh to (item 4 of wb) - (item 2 of wb)\n"
+            "            set wx to ((sw - ww) / 2) as integer\n"
+            "            set wy to ((sh - wh) / 2) as integer\n"
+            "            set position of targetWindow to {wx, wy}"
+        )
 
     applescript = f"""
 on run
@@ -128,12 +144,7 @@ on run
             set number of columns of targetWindow to {cols}
             set number of rows of targetWindow to {rows}
             delay 0.02
-            set wb to bounds of targetWindow
-            set ww to (item 3 of wb) - (item 1 of wb)
-            set wh to (item 4 of wb) - (item 2 of wb)
-            set wx to ((sw - ww) / 2) as integer
-            set wy to ((sh - wh) / 2) as integer
-            set position of targetWindow to {{wx, wy}}
+            {position_script}
             return (id of targetWindow as string)
         on error
             return ""
@@ -148,6 +159,37 @@ end run
         check=False,
     )
     return proc.stdout.strip()
+
+
+def _read_window_position_macos(window_id: str) -> tuple[int, int] | None:
+    """Return the current (x, y) position of a Terminal.app window, or None."""
+    if not window_id:
+        return None
+    script = f"""
+tell application "Terminal"
+    try
+        set w to first window whose id is {window_id}
+        set pos to position of w
+        return ((item 1 of pos as string) & "," & (item 2 of pos as string))
+    on error
+        return ""
+    end try
+end tell
+"""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        ).stdout.strip()
+        if "," in out:
+            x, y = out.split(",", 1)
+            return int(x.strip()), int(y.strip())
+    except Exception:
+        pass
+    return None
 
 
 def _close_terminal_window_macos(window_id: str) -> None:
@@ -334,6 +376,45 @@ def _center_window_linux(cols: int, rows: int) -> None:
         pass
 
 
+def _place_window_linux(xwin_id: str, x: int, y: int) -> None:
+    """Move an X11 window to (x, y) via wmctrl. No-op on Wayland or if unavailable."""
+    if os.environ.get("WAYLAND_DISPLAY") or not xwin_id:
+        return
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["wmctrl", "-i", "-r", xwin_id, "-e", f"0,{x},{y},-1,-1"],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
+def _read_window_position_linux(xwin_id: str) -> tuple[int, int] | None:
+    """Return the current (x, y) position of an X11 window via xdotool, or None."""
+    if not xwin_id or os.environ.get("WAYLAND_DISPLAY"):
+        return None
+    try:
+        out = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", xwin_id],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        ).stdout
+        x = y = None
+        for line in out.splitlines():
+            if line.startswith("X="):
+                x = int(line.split("=", 1)[1])
+            elif line.startswith("Y="):
+                y = int(line.split("=", 1)[1])
+        if x is not None and y is not None:
+            return x, y
+    except Exception:
+        pass
+    return None
+
+
 def _get_active_xwindow_id() -> str:
     """Return the hex window ID of the currently focused X11 window, or ''."""
     try:
@@ -392,7 +473,9 @@ def raise_window_linux(xwin_id: str) -> None:
         )
 
 
-def _spawn_terminal_window_linux(rid: str, question: str) -> str:
+def _spawn_terminal_window_linux(
+    rid: str, question: str, position: tuple[int, int] | None = None
+) -> str:
     """Spawn a terminal emulator running the TUI. Returns 'pid:xwin_id' or str(pid)."""
     from claude_qte._runtime import current_invocation, shell_quote
     from claude_qte.popup import compute_window_size
@@ -428,10 +511,13 @@ def _spawn_terminal_window_linux(rid: str, question: str) -> str:
         else:
             return ""
 
-    # Wait for the window to appear, center it, then pin it on top.
+    # Wait for the window to appear, then position and pin it on top.
     time.sleep(0.25)
-    _center_window_linux(cols, rows)
     xwin_id = _get_active_xwindow_id()
+    if position is not None:
+        _place_window_linux(xwin_id, *position)
+    else:
+        _center_window_linux(cols, rows)
     _pin_window_on_top_linux(xwin_id)
 
     # Encode both pid and xwin_id so the polling loop can re-raise periodically.
@@ -493,18 +579,29 @@ def frontmost_terminal_tty() -> str:
     return ""
 
 
-def spawn_terminal_window(rid: str, question: str) -> str:
+def spawn_terminal_window(rid: str, question: str, position: tuple[int, int] | None = None) -> str:
     """Spawn a terminal window running the TUI for *rid*.
 
-    Returns an opaque handle string passed back to :func:`close_terminal_window`.
-    On macOS this is the AppleScript window id; on Linux it is the process PID.
+    If *position* is given as (x, y) the window is placed there; otherwise it
+    is centered on screen.  Returns an opaque handle string passed back to
+    :func:`close_terminal_window` and :func:`read_window_position`.
     Returns '' on failure — callers must handle that gracefully.
     """
     if IS_MACOS:
-        return _spawn_terminal_window_macos(rid, question)
+        return _spawn_terminal_window_macos(rid, question, position)
     if IS_LINUX:
-        return _spawn_terminal_window_linux(rid, question)
+        return _spawn_terminal_window_linux(rid, question, position)
     return ""
+
+
+def read_window_position(handle: str) -> tuple[int, int] | None:
+    """Return the current (x, y) screen position of the popup window, or None."""
+    if IS_MACOS:
+        return _read_window_position_macos(handle)
+    if IS_LINUX:
+        _, xwin_id = _parse_linux_handle(handle)
+        return _read_window_position_linux(xwin_id)
+    return None
 
 
 def close_terminal_window(handle: str) -> None:

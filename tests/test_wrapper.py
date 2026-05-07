@@ -1,6 +1,5 @@
 """Tests for :mod:`claude_qte.wrapper`."""
 
-import signal
 import socket
 import threading
 from unittest import mock

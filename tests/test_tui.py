@@ -144,28 +144,28 @@ class TestParseQuestionEdgeCases:
     def test_diff_with_hunk_line(self):
         diff_data = {"__diff__": True, "path": "x.py", "diff": "@@ -1,1 +1,1 @@\n"}
         with patch("curses.color_pair", side_effect=lambda x: x):
-            label, lines, is_diff = _parse_question(json.dumps(diff_data))
+            _label, lines, is_diff = _parse_question(json.dumps(diff_data))
         assert is_diff is True
         assert any("@@" in seg[0] for line in lines for seg in line)
 
     def test_diff_with_context_line(self):
         diff_data = {"__diff__": True, "path": "x.py", "diff": " unchanged line\n"}
         with patch("curses.color_pair", side_effect=lambda x: x):
-            label, lines, is_diff = _parse_question(json.dumps(diff_data))
+            _label, _lines, is_diff = _parse_question(json.dumps(diff_data))
         assert is_diff is True
 
     def test_diff_with_meta_lines(self):
         diff_data = {"__diff__": True, "path": "x.py", "diff": "--- a/x.py\n+++ b/x.py\n"}
         with patch("curses.color_pair", side_effect=lambda x: x):
-            label, lines, is_diff = _parse_question(json.dumps(diff_data))
+            _label, _lines, is_diff = _parse_question(json.dumps(diff_data))
         assert is_diff is True
 
     def test_invalid_json_returns_plain(self):
-        label, lines, is_diff = _parse_question("not json {{{")
+        label, _lines, is_diff = _parse_question("not json {{{")
         assert label == "Tool use"
         assert is_diff is False
 
     def test_multiline_plain_text(self):
-        label, lines, is_diff = _parse_question("line1\nline2\nline3")
+        _label, lines, is_diff = _parse_question("line1\nline2\nline3")
         assert is_diff is False
         assert lines == ["line1", "line2", "line3"]

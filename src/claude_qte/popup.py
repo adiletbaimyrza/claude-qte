@@ -13,14 +13,20 @@ import os
 import textwrap
 import time
 
-from claude_qte._platform import close_terminal_window, keep_window_on_top, spawn_terminal_window
-from claude_qte._sound import play_notification
+from claude_qte._platform import (
+    close_terminal_window,
+    keep_window_on_top,
+    read_window_position,
+    spawn_terminal_window,
+)
 from claude_qte._runtime import (
     ANSWER_TIMEOUT,
+    POPUP_POSITION_FILE,
     TMP_DIR,
     next_request_id,
     safe_unlink,
 )
+from claude_qte._sound import play_notification
 
 # Fixed UI rows around the question panel: header (2) + spacer (1) +
 # "Tool use" label (1) + panel borders (2) + scroll-hint slot (1) +
@@ -34,6 +40,28 @@ MIN_COLS, MAX_COLS = 72, 110
 MIN_ROWS, MAX_ROWS = 16, 40
 
 
+def load_popup_position() -> tuple[int, int] | None:
+    """Return the last saved popup position as (x, y), or None."""
+    try:
+        with open(POPUP_POSITION_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return int(data["x"]), int(data["y"])
+    except Exception:
+        return None
+
+
+def save_popup_position(x: int, y: int) -> None:
+    """Persist the popup position so the next popup appears in the same spot."""
+    try:
+        os.makedirs(os.path.dirname(POPUP_POSITION_FILE), exist_ok=True)
+        tmp = POPUP_POSITION_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"x": x, "y": y}, fh)
+        os.replace(tmp, POPUP_POSITION_FILE)
+    except Exception:
+        pass
+
+
 def prompt_user(question: str) -> dict:
     """Spawn a fullscreen Terminal window with the TUI and wait for its answer."""
     os.makedirs(TMP_DIR, exist_ok=True)
@@ -44,7 +72,8 @@ def prompt_user(question: str) -> dict:
     with open(qfile, "w", encoding="utf-8") as fh:
         json.dump({"question": question}, fh)
 
-    win_id = spawn_terminal_window(rid, question)
+    saved_pos = load_popup_position()
+    win_id = spawn_terminal_window(rid, question, saved_pos)
     play_notification()
 
     answer = None
@@ -66,12 +95,18 @@ def prompt_user(question: str) -> dict:
             keep_window_on_top(win_id)
             last_raise = now
 
+    # Read the window position before closing it so we can persist it.
+    current_pos = read_window_position(win_id)
+
     # Brief pause so the TUI's `os._exit(0)` fully tears down the exec'd
     # Python process before we ask Terminal to close the window. With no
     # process left in the tty, `close saving no` skips the
     # "process still running" confirmation dialog.
     time.sleep(0.08)
     close_terminal_window(win_id)
+
+    if current_pos is not None and current_pos != saved_pos:
+        save_popup_position(*current_pos)
 
     if answer is None:
         safe_unlink(qfile)

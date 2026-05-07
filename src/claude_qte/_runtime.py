@@ -12,6 +12,7 @@ TMP_DIR = os.path.join(tempfile.gettempdir(), "claude-qte")
 ANSWER_TIMEOUT = 300  # seconds the gate may sit on the popup
 
 DISABLED_FLAG = os.path.expanduser("~/.config/claude-qte/disabled")
+POPUP_POSITION_FILE = os.path.expanduser("~/.config/claude-qte/popup-position.json")
 
 _request_lock = threading.Lock()
 _request_seq = 0

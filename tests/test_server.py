@@ -1,5 +1,6 @@
 """Tests for claude_qte.server — HTTP handler logic, no real sockets."""
 
+import contextlib
 import json
 from http.server import HTTPServer
 from io import BytesIO
@@ -166,10 +167,8 @@ class TestWatchParent:
         monkeypatch.setattr(server_mod.os, "_exit", _exit)
         monkeypatch.setattr(server_mod.time, "sleep", lambda _: None)
 
-        try:
+        with contextlib.suppress(_Exited):
             _watch_parent(9999)
-        except _Exited:
-            pass
         assert exited == [0]
 
 
