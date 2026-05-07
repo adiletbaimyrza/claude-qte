@@ -35,6 +35,16 @@ def run_hook() -> None:
         emit_decision("ask")
         return
 
+    tool_name = event.get("tool_name", "")
+    tool_input = event.get("tool_input", {})
+    cwd = event.get("cwd", "")
+
+    # If the tool call matches a permissions.allow rule in Claude's settings,
+    # skip the popup — the user has already pre-approved it.
+    if _is_permitted(tool_name, tool_input, cwd):
+        emit_decision("allow", "matches permissions.allow rule")
+        return
+
     ppid = os.getppid()
     port = _ensure_gate(ppid)
 
@@ -55,7 +65,7 @@ def run_hook() -> None:
         emit_decision("ask")
         return
 
-    question = describe_tool(event.get("tool_name", ""), event.get("tool_input", {}))
+    question = describe_tool(tool_name, tool_input)
     answer = call_gate(port, question)
 
     if answer is None:
@@ -189,6 +199,72 @@ def _parent_tty() -> str:
     if not out or out == "?":
         return ""
     return out if out.startswith("/dev/") else f"/dev/{out}"
+
+
+def _load_allow_rules(cwd: str) -> list[str]:
+    """Return the merged permissions.allow list from user + project settings."""
+    rules: list[str] = []
+    candidates = [os.path.expanduser("~/.claude/settings.json")]
+    # Walk up from cwd looking for .claude/settings.json
+    path = os.path.abspath(cwd) if cwd else ""
+    while path and path != os.path.dirname(path):
+        candidate = os.path.join(path, ".claude", "settings.json")
+        if os.path.exists(candidate):
+            candidates.append(candidate)
+            break
+        path = os.path.dirname(path)
+
+    for settings_path in candidates:
+        try:
+            with open(settings_path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            rules.extend(data.get("permissions", {}).get("allow", []))
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+    return rules
+
+
+def _matches_rule(rule: str, tool_name: str, tool_input: dict) -> bool:
+    """Return True if *tool_name* / *tool_input* matches a permission rule string.
+
+    Rule format (same as Claude Code's permissions.allow):
+      "Bash"            → matches all Bash calls
+      "Bash(git *)"     → Bash where command glob-matches "git *"
+      "Edit"            → matches all Edit calls
+      "Edit(/path/*)"   → Edit where file_path glob-matches "/path/*"
+      "Write(/path/*)"  → Write where file_path glob-matches "/path/*"
+    """
+    import fnmatch
+
+    rule = rule.strip()
+    if "(" in rule:
+        rule_tool, rest = rule.split("(", 1)
+        rule_tool = rule_tool.strip()
+        pattern = rest.rstrip(")").strip()
+    else:
+        rule_tool = rule
+        pattern = None
+
+    if rule_tool != tool_name:
+        return False
+    if pattern is None or pattern == "*":
+        return True
+
+    # Pick the right field to match against per tool.
+    if tool_name == "Bash":
+        subject = (tool_input.get("command") or "").strip()
+    elif tool_name in ("Edit", "Write", "NotebookEdit"):
+        subject = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
+    else:
+        subject = json.dumps(tool_input, ensure_ascii=False)
+
+    return fnmatch.fnmatch(subject, pattern)
+
+
+def _is_permitted(tool_name: str, tool_input: dict, cwd: str) -> bool:
+    """True if the tool call is pre-approved via permissions.allow in settings."""
+    rules = _load_allow_rules(cwd)
+    return any(_matches_rule(rule, tool_name, tool_input) for rule in rules)
 
 
 def describe_tool(tool_name: str, tool_input: dict) -> str:

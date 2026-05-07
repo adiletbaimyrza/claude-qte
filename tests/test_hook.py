@@ -3,7 +3,14 @@
 import json
 
 import claude_qte.hook as hook_mod
-from claude_qte.hook import describe_tool, emit_decision, is_gate_self_call
+from claude_qte.hook import (
+    _is_permitted,
+    _load_allow_rules,
+    _matches_rule,
+    describe_tool,
+    emit_decision,
+    is_gate_self_call,
+)
 
 
 class TestDescribeTool:
@@ -194,3 +201,65 @@ class TestEmitDecision:
         emit_decision("ask", "")
         out = json.loads(capsys.readouterr().out)
         assert "permissionDecisionReason" not in out["hookSpecificOutput"]
+
+
+class TestMatchesRule:
+    def test_bare_tool_name_matches_any_input(self):
+        assert _matches_rule("Bash", "Bash", {"command": "ls"})
+        assert _matches_rule("Edit", "Edit", {"file_path": "/x"})
+
+    def test_bare_tool_name_does_not_match_other_tool(self):
+        assert not _matches_rule("Bash", "Edit", {"file_path": "/x"})
+
+    def test_bash_glob_matches_command(self):
+        assert _matches_rule("Bash(git *)", "Bash", {"command": "git push origin main"})
+        assert not _matches_rule("Bash(git *)", "Bash", {"command": "rm -rf /"})
+
+    def test_edit_glob_matches_file_path(self):
+        assert _matches_rule("Edit(/home/user/*)", "Edit", {"file_path": "/home/user/foo.py"})
+        assert not _matches_rule("Edit(/home/user/*)", "Edit", {"file_path": "/etc/passwd"})
+
+    def test_write_glob_matches_file_path(self):
+        assert _matches_rule("Write(/tmp/*)", "Write", {"file_path": "/tmp/out.txt"})
+        assert not _matches_rule("Write(/tmp/*)", "Write", {"file_path": "/home/x.txt"})
+
+    def test_wildcard_pattern_matches_all(self):
+        assert _matches_rule("Bash(*)", "Bash", {"command": "anything"})
+
+
+class TestLoadAllowRules:
+    def test_reads_user_settings(self, tmp_path):
+        settings = tmp_path / "settings.json"
+        settings.write_text(json.dumps({"permissions": {"allow": ["Bash(git *)"]}}))
+        rules = (
+            _load_allow_rules.__wrapped__(str(tmp_path))
+            if hasattr(_load_allow_rules, "__wrapped__")
+            else None
+        )
+        # Directly test via monkeypatching the path
+        import unittest.mock
+
+        with unittest.mock.patch("os.path.expanduser", return_value=str(settings)):
+            rules = _load_allow_rules("")
+        assert "Bash(git *)" in rules
+
+    def test_missing_settings_returns_empty(self, tmp_path):
+        import unittest.mock
+
+        with unittest.mock.patch("os.path.expanduser", return_value=str(tmp_path / "missing.json")):
+            rules = _load_allow_rules("")
+        assert rules == []
+
+
+class TestIsPermitted:
+    def test_permitted_when_rule_matches(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "_load_allow_rules", lambda cwd: ["Bash(git *)"])
+        assert _is_permitted("Bash", {"command": "git status"}, "")
+
+    def test_not_permitted_when_no_rule_matches(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "_load_allow_rules", lambda cwd: ["Bash(git *)"])
+        assert not _is_permitted("Bash", {"command": "rm -rf /"}, "")
+
+    def test_not_permitted_when_no_rules(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "_load_allow_rules", lambda cwd: [])
+        assert not _is_permitted("Bash", {"command": "ls"}, "")
