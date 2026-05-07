@@ -39,6 +39,10 @@ def run_hook() -> None:
     tool_input = event.get("tool_input", {})
     cwd = event.get("cwd", "")
 
+    if not tool_name:
+        emit_decision("ask")
+        return
+
     # If the tool call matches a permissions.allow rule in Claude's settings,
     # skip the popup — the user has already pre-approved it.
     if _is_permitted(tool_name, tool_input, cwd):

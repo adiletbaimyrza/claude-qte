@@ -14,6 +14,7 @@ import textwrap
 import time
 
 from claude_qte._platform import close_terminal_window, keep_window_on_top, spawn_terminal_window
+from claude_qte._sound import play_notification
 from claude_qte._runtime import (
     ANSWER_TIMEOUT,
     TMP_DIR,
@@ -44,9 +45,6 @@ def prompt_user(question: str) -> dict:
         json.dump({"question": question}, fh)
 
     win_id = spawn_terminal_window(rid, question)
-
-    from claude_qte._sound import play_notification
-
     play_notification()
 
     answer = None

@@ -52,6 +52,7 @@ jobs:
       - name: Run pytest
         run: pytest
 
+
   build:
     name: Build (macos-arm64)
     needs: test

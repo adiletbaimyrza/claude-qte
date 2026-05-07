@@ -78,9 +78,8 @@ def _sound_path(name: str) -> str | None:
     """Return an absolute path to the bundled mp3 for *name*, or None."""
     try:
         pkg = importlib.resources.files("claude_qte") / "sounds" / f"{name}.mp3"
-        # importlib.resources may return a Path or a traversable; resolve to str.
         with importlib.resources.as_file(pkg) as path:
-            return str(path)
+            return str(path) if path.exists() else None
     except (FileNotFoundError, TypeError, AttributeError):
         return None
 

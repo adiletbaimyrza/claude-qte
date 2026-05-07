@@ -1,6 +1,8 @@
 """Pure logic in :mod:`claude_qte.hook` — no subprocess, no I/O."""
 
+import io
 import json
+from unittest.mock import MagicMock
 
 import claude_qte.hook as hook_mod
 from claude_qte.hook import (
@@ -55,6 +57,32 @@ class TestDescribeTool:
         out = describe_tool("X", {"big": "a" * 5000})
         assert out.endswith("…")
         assert len(out) < 1000
+
+    def test_edit_no_changes(self, tmp_path):
+        path = str(tmp_path / "x.py")
+        result = json.loads(
+            hook_mod.describe_tool(
+                "Edit", {"file_path": path, "old_string": "x", "new_string": "x"}
+            )
+        )
+        assert "no changes" in result["diff"]
+
+    def test_write_existing_file(self, tmp_path):
+        path = tmp_path / "f.txt"
+        path.write_text("old content\n")
+        result = json.loads(
+            hook_mod.describe_tool("Write", {"file_path": str(path), "content": "new content\n"})
+        )
+        assert "-old content" in result["diff"]
+        assert "+new content" in result["diff"]
+
+    def test_write_no_changes(self, tmp_path):
+        path = tmp_path / "f.txt"
+        path.write_text("same\n")
+        result = json.loads(
+            hook_mod.describe_tool("Write", {"file_path": str(path), "content": "same\n"})
+        )
+        assert "no changes" in result["diff"]
 
 
 class TestIsGateSelfCall:
@@ -128,7 +156,6 @@ class TestEnsureGate:
         port_file = tmp_path / "gate-1234.port"
         port_file.write_text("7777")
         monkeypatch.setattr(hook_mod, "TMP_DIR", str(tmp_path))
-        # ping always fails → stale
         monkeypatch.setattr(hook_mod, "_ping_gate", lambda port: False)
         spawned = {}
         monkeypatch.setattr(
@@ -176,7 +203,6 @@ class TestDisabledFlag:
     def test_no_flag_does_not_short_circuit(self, monkeypatch, tmp_path):
         flag = str(tmp_path / "disabled")
         monkeypatch.setattr(hook_mod, "DISABLED_FLAG", flag)
-        # Flag absent — should NOT short-circuit (reaches presence check).
         assert not __import__("os").path.exists(flag)
 
 
@@ -231,12 +257,6 @@ class TestLoadAllowRules:
     def test_reads_user_settings(self, tmp_path):
         settings = tmp_path / "settings.json"
         settings.write_text(json.dumps({"permissions": {"allow": ["Bash(git *)"]}}))
-        rules = (
-            _load_allow_rules.__wrapped__(str(tmp_path))
-            if hasattr(_load_allow_rules, "__wrapped__")
-            else None
-        )
-        # Directly test via monkeypatching the path
         import unittest.mock
 
         with unittest.mock.patch("os.path.expanduser", return_value=str(settings)):
@@ -263,3 +283,203 @@ class TestIsPermitted:
     def test_not_permitted_when_no_rules(self, monkeypatch):
         monkeypatch.setattr(hook_mod, "_load_allow_rules", lambda cwd: [])
         assert not _is_permitted("Bash", {"command": "ls"}, "")
+
+
+class TestRunHookFlows:
+    def test_permitted_tool_emits_allow(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: True)
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {"command": "git status"}})),
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_gate_self_call_emits_allow(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: False)
+        monkeypatch.setattr(hook_mod, "_ensure_gate", lambda ppid: 9999)
+        monkeypatch.setattr(hook_mod, "is_gate_self_call", lambda event, port: True)
+        monkeypatch.setattr(hook_mod, "user_is_present", lambda: False)
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(
+                json.dumps(
+                    {"tool_name": "Bash", "tool_input": {"command": "curl localhost:9999/ask"}}
+                )
+            ),
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_user_present_emits_ask(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: False)
+        monkeypatch.setattr(hook_mod, "_ensure_gate", lambda ppid: 9999)
+        monkeypatch.setattr(hook_mod, "is_gate_self_call", lambda event, port: False)
+        monkeypatch.setattr(hook_mod, "user_is_present", lambda: True)
+        monkeypatch.setattr(
+            "sys.stdin", io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {}}))
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+    def test_gate_none_emits_ask(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: False)
+        monkeypatch.setattr(hook_mod, "_ensure_gate", lambda ppid: None)
+        monkeypatch.setattr(hook_mod, "is_gate_self_call", lambda event, port: False)
+        monkeypatch.setattr(hook_mod, "user_is_present", lambda: False)
+        monkeypatch.setattr(
+            "sys.stdin", io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {}}))
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+    def test_gate_approved_emits_allow(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: False)
+        monkeypatch.setattr(hook_mod, "_ensure_gate", lambda ppid: 9999)
+        monkeypatch.setattr(hook_mod, "is_gate_self_call", lambda event, port: False)
+        monkeypatch.setattr(hook_mod, "user_is_present", lambda: False)
+        monkeypatch.setattr(
+            hook_mod, "call_gate", lambda port, q: {"approved": True, "answer": "yes"}
+        )
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}})),
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    def test_gate_denied_emits_deny(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: False)
+        monkeypatch.setattr(hook_mod, "_ensure_gate", lambda ppid: 9999)
+        monkeypatch.setattr(hook_mod, "is_gate_self_call", lambda event, port: False)
+        monkeypatch.setattr(hook_mod, "user_is_present", lambda: False)
+        monkeypatch.setattr(
+            hook_mod, "call_gate", lambda port, q: {"approved": False, "answer": "no"}
+        )
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {"command": "rm -rf /"}})),
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    def test_gate_returns_none_emits_ask(self, monkeypatch, capsys):
+        monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: False)
+        monkeypatch.setattr(hook_mod, "_ensure_gate", lambda ppid: 9999)
+        monkeypatch.setattr(hook_mod, "is_gate_self_call", lambda event, port: False)
+        monkeypatch.setattr(hook_mod, "user_is_present", lambda: False)
+        monkeypatch.setattr(hook_mod, "call_gate", lambda port, q: None)
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(json.dumps({"tool_name": "Bash", "tool_input": {"command": "ls"}})),
+        )
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+    def test_invalid_json_emits_ask(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.stdin", io.StringIO("not json {{{"))
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+    def test_empty_stdin_emits_ask(self, monkeypatch, capsys):
+        monkeypatch.setattr("sys.stdin", io.StringIO(""))
+        hook_mod.run_hook()
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
+
+
+class TestUserIsPresent:
+    def test_idle_too_long_returns_false(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 9999.0)
+        assert hook_mod.user_is_present() is False
+
+    def test_no_parent_tty_returns_false(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 0.0)
+        monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "")
+        assert hook_mod.user_is_present() is False
+
+    def test_no_front_tty_returns_false(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 0.0)
+        monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "/dev/pts/1")
+        monkeypatch.setattr(hook_mod, "frontmost_terminal_tty", lambda: "")
+        assert hook_mod.user_is_present() is False
+
+    def test_matching_ttys_returns_true(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 0.0)
+        monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "/dev/pts/1")
+        monkeypatch.setattr(hook_mod, "frontmost_terminal_tty", lambda: "/dev/pts/1")
+        assert hook_mod.user_is_present() is True
+
+    def test_mismatched_ttys_returns_false(self, monkeypatch):
+        monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 0.0)
+        monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "/dev/pts/1")
+        monkeypatch.setattr(hook_mod, "frontmost_terminal_tty", lambda: "/dev/pts/2")
+        assert hook_mod.user_is_present() is False
+
+
+class TestParentTty:
+    def test_returns_dev_prefixed_tty(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="pts/3\n"))
+        result = hook_mod._parent_tty()
+        assert result == "/dev/pts/3"
+
+    def test_already_dev_prefixed(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="/dev/ttys001\n"))
+        result = hook_mod._parent_tty()
+        assert result == "/dev/ttys001"
+
+    def test_question_mark_returns_empty(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="?\n"))
+        assert hook_mod._parent_tty() == ""
+
+    def test_subprocess_error_returns_empty(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(
+            subprocess, "run", lambda *a, **kw: (_ for _ in ()).throw(subprocess.SubprocessError())
+        )
+        assert hook_mod._parent_tty() == ""
+
+
+class TestCallGate:
+    def test_returns_parsed_json_on_success(self, monkeypatch):
+        import urllib.request
+
+        class _FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+            def read(self):
+                return json.dumps({"approved": True, "answer": "ok"}).encode()
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: _FakeResp())
+        result = hook_mod.call_gate(9999, "Do X?")
+        assert result == {"approved": True, "answer": "ok"}
+
+    def test_returns_none_on_connection_error(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        monkeypatch.setattr(
+            urllib.request,
+            "urlopen",
+            lambda *a, **kw: (_ for _ in ()).throw(urllib.error.URLError("refused")),
+        )
+        assert hook_mod.call_gate(9999, "Do X?") is None

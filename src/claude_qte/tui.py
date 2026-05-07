@@ -15,6 +15,7 @@ try:
     from pygments import lexers, util
     from pygments.lex import lex
     from pygments.token import Token
+
     HAS_PYGMENTS = True
     # Mapping of Pygments tokens to 256-color foregrounds
     TOKEN_COLORS = {
@@ -103,7 +104,7 @@ def _parse_question(raw: str) -> tuple:
         if isinstance(parsed, dict) and parsed.get("__diff__"):
             path = parsed.get("path", "")
             diff_text = parsed.get("diff", "")
-            
+
             lexer = None
             if HAS_PYGMENTS:
                 try:
@@ -217,10 +218,8 @@ def _get_token_pair(token, bg_state: str) -> int:
     try:
         idx = list(TOKEN_COLORS.values()).index(fg)
     except ValueError:
-        # Fallback to Token.Text
-        fg = TOKEN_COLORS.get(Token.Text, TEXT_FG)
         try:
-            idx = list(TOKEN_COLORS.values()).index(fg)
+            idx = list(TOKEN_COLORS.values()).index(TEXT_FG)
         except ValueError:
             return TEXT_PAIR
 
@@ -354,12 +353,12 @@ def _draw_frame(
     for i in range(panel_max_h):
         border_attr = curses.color_pair(DIM_PAIR)
         _safe_addstr(stdscr, panel_top + i, pad_x, "│ ", border_attr)
-        
+
         if i < len(visible):
             line_segments = visible[i]
             curr_x = pad_x + 2
             max_line_w = panel_w - 4
-            
+
             # Draw segments until we reach max_line_w
             remaining_w = max_line_w
             for text, pair in line_segments:
@@ -369,7 +368,7 @@ def _draw_frame(
                 _safe_addstr(stdscr, panel_top + i, curr_x, chunk, pair)
                 curr_x += len(chunk)
                 remaining_w -= len(chunk)
-            
+
             # Pad the rest of the line with the background of the last segment (or panel bg)
             if remaining_w > 0:
                 # If it's a diff line (+/-), use the appropriate background pair
@@ -380,9 +379,9 @@ def _draw_frame(
                         bg_pair = curses.color_pair(DIFF_ADD_PAIR)
                     elif first_text == "-":
                         bg_pair = curses.color_pair(DIFF_DEL_PAIR)
-                
+
                 _safe_addstr(stdscr, panel_top + i, curr_x, " " * remaining_w, bg_pair)
-            
+
             _safe_addstr(stdscr, panel_top + i, pad_x + 2 + max_line_w, " │", border_attr)
         else:
             _safe_addstr(
