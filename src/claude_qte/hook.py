@@ -20,7 +20,7 @@ from claude_qte._runtime import (
 
 # How long the user can be away from the keyboard / off the terminal before
 # we assume they aren't watching and pop up the QTE window.
-USER_PRESENCE_IDLE_SECONDS = 20
+USER_PRESENCE_IDLE_SECONDS: float = float(os.environ.get("CLAUDE_QTE_IDLE_SECONDS", "20"))
 
 
 def run_hook() -> None:
@@ -186,23 +186,43 @@ def user_is_present() -> bool:
     if not parent_tty:
         return False
     front_tty = frontmost_terminal_tty()
-    return bool(front_tty) and parent_tty == front_tty
+    if not front_tty:
+        # TTY detection unavailable (xdotool missing or Wayland): trust idle time alone.
+        return True
+    return parent_tty == front_tty
 
 
 def _parent_tty() -> str:
-    try:
-        ppid = os.getppid()
-        out = subprocess.run(
-            ["ps", "-o", "tty=", "-p", str(ppid)],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout.strip()
-    except (subprocess.SubprocessError, FileNotFoundError):
-        return ""
-    if not out or out == "?":
-        return ""
-    return out if out.startswith("/dev/") else f"/dev/{out}"
+    # Walk up the process tree until we find a process with a real TTY.
+    # The hook's immediate parent (Claude Code's hook runner) often has no TTY
+    # (shows "?"), but Claude Code itself and the shell above it do.
+    pid = os.getppid()
+    seen: set[int] = set()
+    while pid and pid not in seen:
+        seen.add(pid)
+        try:
+            out = subprocess.run(
+                ["ps", "-o", "tty=,ppid=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            ).stdout.strip()
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return ""
+        if not out:
+            return ""
+        parts = out.split()
+        tty = parts[0] if parts else "?"
+        ppid_str = parts[1] if len(parts) > 1 else "0"
+        if tty and tty != "?":
+            return tty if tty.startswith("/dev/") else f"/dev/{tty}"
+        try:
+            pid = int(ppid_str)
+        except ValueError:
+            return ""
+        if pid <= 1:
+            return ""
+    return ""
 
 
 def _load_allow_rules(cwd: str) -> list[str]:

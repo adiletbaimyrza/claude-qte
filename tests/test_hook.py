@@ -412,8 +412,16 @@ class TestUserIsPresent:
         monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "")
         assert hook_mod.user_is_present() is False
 
-    def test_no_front_tty_returns_false(self, monkeypatch):
+    def test_no_front_tty_idle_below_threshold_returns_true(self, monkeypatch):
+        # xdotool unavailable but user was recently active → treat as present.
         monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 0.0)
+        monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "/dev/pts/1")
+        monkeypatch.setattr(hook_mod, "frontmost_terminal_tty", lambda: "")
+        assert hook_mod.user_is_present() is True
+
+    def test_no_front_tty_idle_above_threshold_returns_false(self, monkeypatch):
+        # xdotool unavailable and user has been idle too long → treat as absent.
+        monkeypatch.setattr(hook_mod, "idle_seconds", lambda: 9999.0)
         monkeypatch.setattr(hook_mod, "_parent_tty", lambda: "/dev/pts/1")
         monkeypatch.setattr(hook_mod, "frontmost_terminal_tty", lambda: "")
         assert hook_mod.user_is_present() is False
@@ -435,21 +443,32 @@ class TestParentTty:
     def test_returns_dev_prefixed_tty(self, monkeypatch):
         import subprocess
 
-        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="pts/3\n"))
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="pts/3 1234\n"))
         result = hook_mod._parent_tty()
         assert result == "/dev/pts/3"
 
     def test_already_dev_prefixed(self, monkeypatch):
         import subprocess
 
-        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="/dev/ttys001\n"))
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="/dev/ttys001 1234\n"))
         result = hook_mod._parent_tty()
         assert result == "/dev/ttys001"
 
-    def test_question_mark_returns_empty(self, monkeypatch):
+    def test_question_mark_walks_up_to_parent(self, monkeypatch):
         import subprocess
 
-        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="?\n"))
+        # First call: immediate parent has no TTY; second call: grandparent has one.
+        responses = iter([
+            MagicMock(stdout="? 5678\n"),
+            MagicMock(stdout="pts/2 1\n"),
+        ])
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: next(responses))
+        assert hook_mod._parent_tty() == "/dev/pts/2"
+
+    def test_question_mark_hits_pid1_returns_empty(self, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: MagicMock(stdout="? 1\n"))
         assert hook_mod._parent_tty() == ""
 
     def test_subprocess_error_returns_empty(self, monkeypatch):

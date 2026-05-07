@@ -1,3 +1,3 @@
 """claude-qte — Quick-Time Event approval gate for Claude Code."""
 
-__version__ = "1.5.4"
+__version__ = "1.5.5"
