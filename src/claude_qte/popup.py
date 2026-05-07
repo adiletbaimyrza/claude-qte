@@ -45,6 +45,10 @@ def prompt_user(question: str) -> dict:
 
     win_id = spawn_terminal_window(rid, question)
 
+    from claude_qte._sound import play_notification
+
+    play_notification()
+
     answer = None
     deadline = time.time() + ANSWER_TIMEOUT
     last_raise = time.time()

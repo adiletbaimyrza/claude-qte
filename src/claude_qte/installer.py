@@ -27,11 +27,20 @@ LEGACY_PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{LEGACY_PLIST_LA
 COMMANDS_DIR = os.path.expanduser("~/.claude/commands")
 _QTE_OFF_CMD = os.path.join(COMMANDS_DIR, "qte-off.md")
 _QTE_ON_CMD = os.path.join(COMMANDS_DIR, "qte-on.md")
+_QTE_SOUND_CMD = os.path.join(COMMANDS_DIR, "qte-sound.md")
 _QTE_OFF_CONTENT = """\
 Run this exact shell command and report the output: `claude-qte disable`
 """
 _QTE_ON_CONTENT = """\
 Run this exact shell command and report the output: `claude-qte enable`
+"""
+_QTE_SOUND_CONTENT = """\
+Run this exact shell command and report the output: `claude-qte sound list`
+
+Then ask the user which sound they want (or if they want sound off/on) and run the appropriate command:
+- To set a sound: `claude-qte sound set <name>`
+- To disable sound: `claude-qte sound off`
+- To enable sound: `claude-qte sound on`
 """
 
 CLAUDE_MD_PATH = os.path.expanduser("~/.claude/CLAUDE.md")
@@ -109,10 +118,12 @@ def install_slash_commands() -> None:
         fh.write(_QTE_OFF_CONTENT)
     with open(_QTE_ON_CMD, "w", encoding="utf-8") as fh:
         fh.write(_QTE_ON_CONTENT)
+    with open(_QTE_SOUND_CMD, "w", encoding="utf-8") as fh:
+        fh.write(_QTE_SOUND_CONTENT)
 
 
 def uninstall_slash_commands() -> None:
-    for path in (_QTE_OFF_CMD, _QTE_ON_CMD):
+    for path in (_QTE_OFF_CMD, _QTE_ON_CMD, _QTE_SOUND_CMD):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(path)
 

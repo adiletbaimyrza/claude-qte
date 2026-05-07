@@ -30,6 +30,13 @@ def main() -> None:
     sub.add_parser("update", help="Update to the latest release")
     sub.add_parser("disable", help="Disable the gate (fall back to native prompts)")
     sub.add_parser("enable", help="Re-enable the gate")
+    sound_p = sub.add_parser("sound", help="Manage notification sound")
+    sound_sub = sound_p.add_subparsers(dest="sound_cmd")
+    sound_sub.add_parser("list", help="List available sounds")
+    sound_set_p = sound_sub.add_parser("set", help="Set active sound")
+    sound_set_p.add_argument("name", help="Sound name (see 'sound list')")
+    sound_sub.add_parser("off", help="Disable notification sound")
+    sound_sub.add_parser("on", help="Re-enable notification sound")
     run_p = sub.add_parser(
         "run",
         help="Start a per-session gate, run command, kill the gate on exit",
@@ -54,6 +61,47 @@ def main() -> None:
         from claude_qte.installer import run_update
 
         run_update()
+    elif args.cmd == "sound":
+        from claude_qte._sound import (
+            DEFAULT_SOUND,
+            SOUNDS,
+            get_sound,
+            is_muted,
+            mute_sound,
+            play_notification,
+            set_sound,
+            unmute_sound,
+        )
+
+        if args.sound_cmd == "list":
+            current = get_sound()
+            muted = is_muted()
+            if muted:
+                print("  Sound is currently off.\n")
+            for name, label in SOUNDS.items():
+                marker = " (active)" if name == current and not muted else ""
+                default = " [default]" if name == DEFAULT_SOUND else ""
+                print(f"  {name:<14} {label}{default}{marker}")
+        elif args.sound_cmd == "set":
+            if set_sound(args.name):
+                print(f"  Sound set to '{args.name}'. Playing a preview…")
+                play_notification()
+                import time
+
+                time.sleep(3)
+            else:
+                import sys
+
+                print(f"  Unknown sound '{args.name}'. Run 'claude-qte sound list' to see options.")
+                sys.exit(1)
+        elif args.sound_cmd == "off":
+            mute_sound()
+            print("  Notification sound disabled. Use 'claude-qte sound on' to re-enable.")
+        elif args.sound_cmd == "on":
+            unmute_sound()
+            print(f"  Notification sound enabled ('{get_sound()}').")
+        else:
+            sound_p.print_help()
     elif args.cmd == "disable":
         from claude_qte.installer import run_disable
 
