@@ -12,7 +12,7 @@ def main() -> None:
         prog="claude-qte",
         description="claude-qte — Claude Code approval gate",
     )
-    parser.add_argument("--version", action="version", version=f"claude-qte {__version__}")
+    parser.add_argument("-v", "--version", action="version", version=f"claude-qte {__version__}")
 
     sub = parser.add_subparsers(dest="cmd")
 
