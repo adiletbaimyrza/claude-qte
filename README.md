@@ -20,12 +20,22 @@ That single command:
 
 1. Downloads the right binary for your Mac (Apple Silicon or Intel).
 2. Drops it in `~/.local/bin/claude-qte`.
-3. Installs a `LaunchAgent` so the gate runs in the background and starts at
-   every login (no terminal window to keep open).
-4. Adds a `PreToolUse` hook to `~/.claude/settings.json` so Claude Code
+3. Adds a `PreToolUse` hook to `~/.claude/settings.json` so Claude Code
    itself enforces the gate — nothing for Claude to "remember to do."
 
-Open a new Claude Code session and you're done.
+Then add this to your shell profile (e.g. `~/.zshrc`):
+
+```sh
+alias claude='~/.local/bin/claude-qte run claude'
+```
+
+Open a new terminal and `claude` will start the gate alongside it. The
+gate runs only while that Claude Code session is alive — when claude exits
+(normal exit, ctrl-c, terminal closed, even SIGKILL), the gate is killed
+with it.
+
+Each session gets its own gate on a fresh free port, so multiple parallel
+`claude` sessions don't fight over `:9999`.
 
 ## Uninstall
 
@@ -33,8 +43,9 @@ Open a new Claude Code session and you're done.
 claude-qte uninstall
 ```
 
-Removes the LaunchAgent, the hook entry from `~/.claude/settings.json`, and
-the binary.
+Removes the hook entry from `~/.claude/settings.json` and the binary
+(plus any leftover `LaunchAgent` from 0.1.x). Also remove the `alias` line
+from your shell profile.
 
 ## How the "smart popup" works
 
@@ -86,12 +97,13 @@ is sent back to Claude as the deny reason.
 
 ## Subcommands
 
-| Command                     | What it does                                    |
-| --------------------------- | ----------------------------------------------- |
-| `claude-qte`                | Run the gate (server mode). LaunchAgent uses it.|
-| `claude-qte hook`           | PreToolUse hook entry point. Wired by `install`.|
-| `claude-qte install`        | Install LaunchAgent + Claude Code hook.         |
-| `claude-qte uninstall`      | Reverse `install`.                              |
+| Command                     | What it does                                          |
+| --------------------------- | ----------------------------------------------------- |
+| `claude-qte run <cmd>...`   | Start a per-session gate, run `<cmd>`, kill the gate. |
+| `claude-qte`                | Run the gate directly (server mode).                  |
+| `claude-qte hook`           | PreToolUse hook entry point. Wired by `install`.      |
+| `claude-qte install`        | Drop the binary and register the Claude Code hook.    |
+| `claude-qte uninstall`      | Reverse `install`.                                    |
 
 ## API (the gate's HTTP surface)
 

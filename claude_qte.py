@@ -42,7 +42,7 @@ ANSWER_TIMEOUT = 300  # seconds the server waits for the TUI to respond
 # ─── Server mode ──────────────────────────────────────────────────────────────
 
 class ApprovalHandler(BaseHTTPRequestHandler):
-    server_version = "claude-qte/0.1"
+    server_version = "claude-qte/0.2"
 
     def log_message(self, fmt, *args):
         pass
@@ -284,7 +284,7 @@ def _as_string(s: str) -> str:
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def run_server(port: int):
+def run_server(port: int, parent_pid: int = 0, quiet: bool = False):
     if platform.system() != "Darwin":
         sys.stderr.write("claude-qte currently supports macOS only.\n")
         sys.exit(2)
@@ -293,8 +293,18 @@ def run_server(port: int):
         sys.exit(2)
 
     os.makedirs(TMP_DIR, exist_ok=True)
+
+    # If launched with --parent-pid (e.g. from `claude-qte run`), exit as soon
+    # as that process is gone — covers SIGKILL of the wrapper and other
+    # cases where the cleanup trap can't run.
+    if parent_pid:
+        threading.Thread(
+            target=_watch_parent, args=(parent_pid,), daemon=True
+        ).start()
+
     httpd = HTTPServer(("127.0.0.1", port), ApprovalHandler)
-    print(f"""
+    if not quiet:
+        print(f"""
   claude-qte — running on http://localhost:{port}
 
   Wire it into Claude Code by adding to ~/.claude/CLAUDE.md:
@@ -309,8 +319,108 @@ def run_server(port: int):
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down.")
+        if not quiet:
+            print("\nShutting down.")
         httpd.server_close()
+
+
+def _watch_parent(pid: int):
+    """Exit the gate as soon as the wrapper process disappears."""
+    while True:
+        time.sleep(2)
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            os._exit(0)
+
+
+# ─── Run mode (per-session wrapper) ──────────────────────────────────────────
+
+def run_command(argv: list):
+    """Spawn a per-session gate, exec the given command, kill the gate on exit.
+
+    Usage: claude-qte run <command> [args...]   e.g. `claude-qte run claude`
+    """
+    if not argv:
+        sys.stderr.write("Usage: claude-qte run <command> [args...]\n")
+        sys.exit(2)
+    if platform.system() != "Darwin":
+        sys.stderr.write("claude-qte currently supports macOS only.\n")
+        sys.exit(2)
+
+    import signal as _signal
+
+    port = _pick_free_port()
+    binary = current_invocation()
+    gate_proc = subprocess.Popen(
+        binary + [
+            "--port", str(port),
+            "--parent-pid", str(os.getpid()),
+            "--quiet",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        # Own process group, so SIGINT to the foreground group (ctrl-c
+        # hitting `claude`) doesn't also kill the gate.
+        start_new_session=True,
+    )
+
+    if not _wait_for_port(port, timeout=5.0):
+        try:
+            gate_proc.terminate()
+        except OSError:
+            pass
+        sys.stderr.write(f"claude-qte: gate did not start on port {port}\n")
+        sys.exit(1)
+
+    def _cleanup_gate():
+        if gate_proc.poll() is None:
+            try:
+                gate_proc.terminate()
+                gate_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                gate_proc.kill()
+            except OSError:
+                pass
+
+    def _on_signal(signum, _frame):
+        _cleanup_gate()
+        sys.exit(128 + signum)
+
+    _signal.signal(_signal.SIGTERM, _on_signal)
+    _signal.signal(_signal.SIGHUP, _on_signal)
+    # Let SIGINT pass through to the child (claude handles ctrl-c itself).
+    _signal.signal(_signal.SIGINT, _signal.SIG_IGN)
+
+    env = os.environ.copy()
+    env["CLAUDE_QTE_PORT"] = str(port)
+
+    try:
+        proc = subprocess.run(argv, env=env)
+        rc = proc.returncode
+    finally:
+        _cleanup_gate()
+
+    sys.exit(rc)
+
+
+def _pick_free_port() -> int:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _wait_for_port(port: int, timeout: float = 5.0) -> bool:
+    import socket
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                return True
+        except (ConnectionRefusedError, OSError):
+            time.sleep(0.05)
+    return False
 
 
 # ─── TUI mode ─────────────────────────────────────────────────────────────────
@@ -743,19 +853,30 @@ def run_install():
         sys.exit(2)
 
     bin_path = _install_binary()
-    _install_launch_agent(bin_path)
+    legacy_removed = _remove_legacy_launch_agent()
     _patch_settings_json(bin_path)
+
+    legacy_note = ""
+    if legacy_removed:
+        legacy_note = (
+            "\n  Migrated from 0.1.x: the old always-on LaunchAgent has been "
+            "removed.\n"
+        )
 
     print(f"""
   claude-qte installed.
 
-  • Binary:       {bin_path}
-  • LaunchAgent:  {PLIST_PATH}
-  • Hook in:      {SETTINGS_PATH}
+  • Binary:  {bin_path}
+  • Hook in: {SETTINGS_PATH}
+{legacy_note}
+  Add this to your shell profile (e.g. ~/.zshrc) so the gate runs only
+  while you're in a Claude Code session:
 
-  The gate is running in the background and will start at every login.
-  Open a new Claude Code session — when you wander off and Claude needs
-  permission, the QTE popup will appear.
+      alias claude='{bin_path} run claude'
+
+  Open a new terminal, run `claude`, and the gate will start with it and
+  exit when you leave. When you wander off and Claude needs permission,
+  the QTE popup will appear.
 """)
     if INSTALL_BIN_DIR not in os.environ.get("PATH", "").split(":"):
         print(f"  Note: add {INSTALL_BIN_DIR} to your PATH to run `claude-qte` directly.\n")
@@ -766,14 +887,8 @@ def run_uninstall():
         sys.stderr.write("claude-qte uninstall is macOS-only.\n")
         sys.exit(2)
 
-    # 1. Stop and remove the LaunchAgent.
-    if os.path.exists(PLIST_PATH):
-        subprocess.run(
-            ["launchctl", "bootout", f"gui/{os.getuid()}", PLIST_PATH],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        os.unlink(PLIST_PATH)
-        print(f"  Removed LaunchAgent {PLIST_PATH}")
+    # 1. Clean up any legacy LaunchAgent left over from 0.1.x.
+    _remove_legacy_launch_agent()
 
     # 2. Remove the hook from settings.json.
     _unpatch_settings_json()
@@ -785,6 +900,8 @@ def run_uninstall():
         print(f"  Removed {bin_path}")
 
     print("\n  claude-qte uninstalled.\n")
+    print("  Don't forget to remove the `alias claude=...` line from your\n"
+          "  shell profile if you added one.\n")
 
 
 def _install_binary() -> str:
@@ -805,44 +922,23 @@ def _install_binary() -> str:
     return target
 
 
-def _install_launch_agent(bin_path: str):
-    plist_dir = os.path.dirname(PLIST_PATH)
-    os.makedirs(plist_dir, exist_ok=True)
+def _remove_legacy_launch_agent() -> bool:
+    """0.1.x installed an always-on LaunchAgent. Remove it if present.
 
-    plist = f'''<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{PLIST_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{bin_path}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/claude-qte.out.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/claude-qte.err.log</string>
-</dict>
-</plist>
-'''
-    with open(PLIST_PATH, "w", encoding="utf-8") as fh:
-        fh.write(plist)
-
-    domain = f"gui/{os.getuid()}"
-    # If a previous version is loaded, kick it out first; ignore errors.
+    Returns True if a legacy plist was found and removed.
+    """
+    if not os.path.exists(PLIST_PATH):
+        return False
     subprocess.run(
-        ["launchctl", "bootout", domain, PLIST_PATH],
+        ["launchctl", "bootout", f"gui/{os.getuid()}", PLIST_PATH],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    subprocess.run(
-        ["launchctl", "bootstrap", domain, PLIST_PATH],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    try:
+        os.unlink(PLIST_PATH)
+    except OSError:
+        return False
+    print(f"  Removed legacy LaunchAgent {PLIST_PATH}")
+    return True
 
 
 def _patch_settings_json(bin_path: str):
@@ -934,23 +1030,38 @@ def main():
                         help="HTTP port to listen on (server mode)")
     parser.add_argument("--tui", metavar="RID", default=None,
                         help=argparse.SUPPRESS)
+    parser.add_argument("--parent-pid", type=int, default=0,
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--quiet", action="store_true",
+                        help=argparse.SUPPRESS)
 
     sub.add_parser("hook", help="Run as a Claude Code PreToolUse hook")
-    sub.add_parser("install", help="Install LaunchAgent + Claude Code hook")
+    sub.add_parser("install", help="Install Claude Code hook")
     sub.add_parser("uninstall", help="Undo install")
+    run_p = sub.add_parser(
+        "run",
+        help="Start a per-session gate, run command, kill the gate on exit",
+    )
+    run_p.add_argument("argv", nargs=argparse.REMAINDER,
+                       help="Command to run (e.g. claude)")
 
     args = parser.parse_args()
 
     if args.cmd == "hook":
-        run_hook(args.port)
+        # Per-session wrapper sets CLAUDE_QTE_PORT. Honor it over the default.
+        env_port = os.environ.get("CLAUDE_QTE_PORT")
+        port = int(env_port) if env_port and env_port.isdigit() else args.port
+        run_hook(port)
     elif args.cmd == "install":
         run_install()
     elif args.cmd == "uninstall":
         run_uninstall()
+    elif args.cmd == "run":
+        run_command(args.argv)
     elif args.tui:
         run_tui(args.tui)
     else:
-        run_server(args.port)
+        run_server(args.port, parent_pid=args.parent_pid, quiet=args.quiet)
 
 
 if __name__ == "__main__":
