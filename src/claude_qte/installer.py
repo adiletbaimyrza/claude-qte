@@ -117,6 +117,96 @@ def uninstall_slash_commands() -> None:
             os.unlink(path)
 
 
+def _latest_github_tag() -> str:
+    """Return the latest release tag name (without leading 'v') from GitHub, or ''."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = "https://api.github.com/repos/adiletbaimyrza/claude-qte/releases/latest"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read()).get("tag_name", "").lstrip("v")
+    except (urllib.error.URLError, OSError):
+        return ""
+
+
+def _editable_repo_path() -> str:
+    """Return the on-disk repo path if this is an editable install, else ''."""
+    import json
+
+    try:
+        import importlib.metadata
+
+        pkg = importlib.metadata.distribution("claude-qte")
+        direct_url = pkg.read_text("direct_url.json")
+        if not direct_url:
+            return ""
+        data = json.loads(direct_url)
+        if data.get("dir_info", {}).get("editable"):
+            url = data.get("url", "")
+            if url.startswith("file://"):
+                return url[len("file://") :]
+    except Exception:
+        pass
+    return ""
+
+
+def run_update() -> None:
+    """Check GitHub for a newer release and update accordingly."""
+    from claude_qte import __version__
+
+    print("  Checking for updates…")
+    latest = _latest_github_tag()
+    if not latest:
+        print("  Could not reach GitHub or determine latest release.")
+        sys.exit(1)
+
+    current = __version__
+    print(f"  Installed : {current}")
+    print(f"  Latest    : {latest}")
+
+    if latest == current:
+        print("  Already up to date.")
+        return
+
+    repo_path = _editable_repo_path()
+    if repo_path:
+        # Editable install — just pull; the running code updates in place.
+        print(f"  Pulling latest changes in {repo_path}…")
+        result = subprocess.run(["git", "-C", repo_path, "pull"], check=False)
+        if result.returncode != 0:
+            print("  git pull failed.")
+            sys.exit(1)
+    else:
+        # Regular pip install — reinstall from the tagged commit.
+        install_url = f"git+https://github.com/adiletbaimyrza/claude-qte.git@v{latest}"
+        print("  Running pip install --upgrade …")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                install_url,
+                "--break-system-packages",
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", install_url],
+                check=False,
+            )
+        if result.returncode != 0:
+            print(f"  Update failed. Try manually:\n\n      pip install --upgrade '{install_url}'")
+            sys.exit(1)
+
+    print(f"\n  claude-qte updated to {latest}.\n")
+
+
 def run_disable() -> None:
     os.makedirs(os.path.dirname(DISABLED_FLAG), exist_ok=True)
     with open(DISABLED_FLAG, "w"):
