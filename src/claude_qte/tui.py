@@ -57,6 +57,7 @@ try:
         Token.Generic.Prompt: 240,
         Token.Generic.Output: 250,
         Token.Generic.Traceback: 160,
+        Token.Text: 252,
     }
 except ImportError:
     HAS_PYGMENTS = False
