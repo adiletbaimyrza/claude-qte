@@ -17,7 +17,7 @@ USER_PRESENCE_IDLE_SECONDS = 20
 
 # AppleScript that returns the tty of the foreground session if the
 # frontmost app is a known terminal — otherwise an empty string.
-_FRONTMOST_TTY_SCRIPT = '''
+_FRONTMOST_TTY_SCRIPT = """
 tell application "System Events"
     set frontApp to name of first process whose frontmost is true
 end tell
@@ -35,7 +35,7 @@ else if frontApp is "iTerm2" or frontApp is "iTerm" then
     end try
 end if
 return ""
-'''
+"""
 
 
 def run_hook(port: int) -> None:
@@ -77,7 +77,7 @@ def run_hook(port: int) -> None:
 def is_gate_self_call(event: dict, port: int) -> bool:
     if event.get("tool_name") != "Bash":
         return False
-    cmd = ((event.get("tool_input") or {}).get("command") or "")
+    cmd = (event.get("tool_input") or {}).get("command") or ""
     for host in ("localhost", "127.0.0.1"):
         for path in ("/ask", "/ping"):
             if f"{host}:{port}{path}" in cmd:
@@ -114,7 +114,9 @@ def _idle_seconds() -> float:
     try:
         out = subprocess.run(
             ["ioreg", "-c", "IOHIDSystem"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         ).stdout
     except (subprocess.SubprocessError, FileNotFoundError):
         return 0.0
@@ -132,7 +134,9 @@ def _parent_tty() -> str:
         ppid = os.getppid()
         out = subprocess.run(
             ["ps", "-o", "tty=", "-p", str(ppid)],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         ).stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError):
         return ""
@@ -145,7 +149,9 @@ def _frontmost_terminal_tty() -> str:
     try:
         result = subprocess.run(
             ["osascript", "-e", _FRONTMOST_TTY_SCRIPT],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         return result.stdout.strip()
     except (subprocess.SubprocessError, FileNotFoundError):
@@ -177,6 +183,7 @@ def describe_tool(tool_name: str, tool_input: dict) -> str:
 def call_gate(port: int, question: str):
     import urllib.error
     import urllib.request
+
     payload = json.dumps({"q": question}).encode("utf-8")
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/ask",

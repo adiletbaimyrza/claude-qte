@@ -20,9 +20,7 @@ INSTALL_BIN_NAME = "claude-qte"
 # 0.1.x leftover — installed an always-on background daemon. We boot it out
 # during install/uninstall so upgrades don't leave a zombie running.
 LEGACY_PLIST_LABEL = "com.claudeqte.gate"
-LEGACY_PLIST_PATH = os.path.expanduser(
-    f"~/Library/LaunchAgents/{LEGACY_PLIST_LABEL}.plist"
-)
+LEGACY_PLIST_PATH = os.path.expanduser(f"~/Library/LaunchAgents/{LEGACY_PLIST_LABEL}.plist")
 
 
 def run_install() -> None:
@@ -36,10 +34,7 @@ def run_install() -> None:
 
     legacy_note = ""
     if legacy_removed:
-        legacy_note = (
-            "\n  Migrated from 0.1.x: the old always-on LaunchAgent has been "
-            "removed.\n"
-        )
+        legacy_note = "\n  Migrated from 0.1.x: the old always-on LaunchAgent has been removed.\n"
 
     print(f"""
   claude-qte installed.
@@ -77,8 +72,10 @@ def run_uninstall() -> None:
         print(f"  Removed {bin_path}")
 
     print("\n  claude-qte uninstalled.\n")
-    print("  Don't forget to remove the `alias claude=...` line from your\n"
-          "  shell profile if you added one.\n")
+    print(
+        "  Don't forget to remove the `alias claude=...` line from your\n"
+        "  shell profile if you added one.\n"
+    )
 
 
 def _install_binary() -> str:
@@ -101,7 +98,8 @@ def _install_binary() -> str:
         # Strip Gatekeeper quarantine so the binary runs without "are you sure?".
         subprocess.run(
             ["xattr", "-d", "com.apple.quarantine", target],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         return target
 
@@ -128,7 +126,8 @@ def remove_legacy_launch_agent() -> bool:
         return False
     subprocess.run(
         ["launchctl", "bootout", f"gui/{os.getuid()}", LEGACY_PLIST_PATH],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         os.unlink(LEGACY_PLIST_PATH)

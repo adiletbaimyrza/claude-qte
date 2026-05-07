@@ -53,14 +53,19 @@ class TestPatchForHook:
         assert not any("/old/bin/claude-qte" in c for c in cmds)
 
     def test_preserves_other_hooks(self, settings_path):
-        save_settings({
-            "hooks": {
-                "PreToolUse": [
-                    {"matcher": "Bash", "hooks": [{"type": "command",
-                                                   "command": "/some/other-tool"}]}
-                ]
-            }
-        }, settings_path)
+        save_settings(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"type": "command", "command": "/some/other-tool"}],
+                        }
+                    ]
+                }
+            },
+            settings_path,
+        )
         patch_for_hook("/usr/local/bin/claude-qte", settings_path)
         s = load_settings(settings_path)
         assert len(s["hooks"]["PreToolUse"]) == 2
@@ -78,14 +83,19 @@ class TestUnpatchHook:
         assert unpatch_hook(settings_path) is False
 
     def test_removes_only_our_entry(self, settings_path):
-        save_settings({
-            "hooks": {
-                "PreToolUse": [
-                    {"matcher": "Bash", "hooks": [{"type": "command",
-                                                   "command": "/some/other-tool"}]}
-                ]
-            }
-        }, settings_path)
+        save_settings(
+            {
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"type": "command", "command": "/some/other-tool"}],
+                        }
+                    ]
+                }
+            },
+            settings_path,
+        )
         patch_for_hook("/usr/local/bin/claude-qte", settings_path)
         assert unpatch_hook(settings_path) is True
         s = load_settings(settings_path)

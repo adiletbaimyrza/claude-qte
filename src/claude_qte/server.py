@@ -63,11 +63,13 @@ class ApprovalHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._json({"approved": False, "answer": f"error: {exc}", "message": str(exc)}, 500)
             return
-        self._json({
-            "approved": answer["approved"],
-            "answer": answer["text"],
-            "message": answer["text"],
-        })
+        self._json(
+            {
+                "approved": answer["approved"],
+                "answer": answer["text"],
+                "message": answer["text"],
+            }
+        )
 
     def _json(self, data, code=200):
         body = json.dumps(data).encode()
@@ -93,9 +95,7 @@ def run_server(port: int, parent_pid: int = 0, quiet: bool = False) -> None:
     # as that process is gone — covers SIGKILL of the wrapper and other
     # cases where the cleanup trap can't run.
     if parent_pid:
-        threading.Thread(
-            target=_watch_parent, args=(parent_pid,), daemon=True
-        ).start()
+        threading.Thread(target=_watch_parent, args=(parent_pid,), daemon=True).start()
 
     httpd = HTTPServer(("127.0.0.1", port), ApprovalHandler)
     if not quiet:

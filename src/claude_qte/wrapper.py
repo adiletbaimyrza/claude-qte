@@ -5,6 +5,7 @@ Picks a free port, spawns the gate as a detached child, sets
 and tears the gate down on exit.
 """
 
+import contextlib
 import os
 import platform
 import signal
@@ -28,11 +29,7 @@ def run_command(argv: list) -> None:
     port = pick_free_port()
     binary = current_invocation()
     gate_proc = subprocess.Popen(
-        binary + [
-            "--port", str(port),
-            "--parent-pid", str(os.getpid()),
-            "--quiet",
-        ],
+        [*binary, "--port", str(port), "--parent-pid", str(os.getpid()), "--quiet"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         # Own process group, so SIGINT to the foreground group (ctrl-c
@@ -41,10 +38,8 @@ def run_command(argv: list) -> None:
     )
 
     if not wait_for_port(port, timeout=5.0):
-        try:
+        with contextlib.suppress(OSError):
             gate_proc.terminate()
-        except OSError:
-            pass
         sys.stderr.write(f"claude-qte: gate did not start on port {port}\n")
         sys.exit(1)
 

@@ -1,5 +1,6 @@
 """Shared low-level helpers used across multiple modules."""
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -46,13 +47,11 @@ def applescript_string(s: str) -> str:
 
 
 def safe_unlink(path: str) -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.unlink(path)
-    except FileNotFoundError:
-        pass
 
 
-def osascript(script: str, *, capture: bool = False, timeout: float = None):
+def osascript(script: str, *, capture: bool = False, timeout: float | None = None):
     """Run an AppleScript snippet via osascript. Returns a CompletedProcess."""
     return subprocess.run(
         ["osascript", "-e", script],

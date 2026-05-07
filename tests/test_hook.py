@@ -2,7 +2,7 @@
 
 import json
 
-from claude_qte.hook import describe_tool, is_gate_self_call
+from claude_qte.hook import describe_tool, emit_decision, is_gate_self_call
 
 
 class TestDescribeTool:
@@ -43,18 +43,18 @@ class TestDescribeTool:
 
 class TestIsGateSelfCall:
     def test_curl_to_localhost_ask(self):
-        event = {"tool_name": "Bash",
-                 "tool_input": {"command": "curl http://localhost:9999/ask?q=hi"}}
+        event = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "curl http://localhost:9999/ask?q=hi"},
+        }
         assert is_gate_self_call(event, 9999) is True
 
     def test_curl_to_127_0_0_1_ping(self):
-        event = {"tool_name": "Bash",
-                 "tool_input": {"command": "curl 127.0.0.1:9999/ping"}}
+        event = {"tool_name": "Bash", "tool_input": {"command": "curl 127.0.0.1:9999/ping"}}
         assert is_gate_self_call(event, 9999) is True
 
     def test_wrong_port(self):
-        event = {"tool_name": "Bash",
-                 "tool_input": {"command": "curl localhost:9998/ask"}}
+        event = {"tool_name": "Bash", "tool_input": {"command": "curl localhost:9998/ask"}}
         assert is_gate_self_call(event, 9999) is False
 
     def test_non_bash_tool(self):
@@ -63,3 +63,26 @@ class TestIsGateSelfCall:
 
     def test_empty_event(self):
         assert is_gate_self_call({}, 9999) is False
+
+
+class TestEmitDecision:
+    def test_allow_without_reason(self, capsys):
+        emit_decision("allow")
+        out = json.loads(capsys.readouterr().out)
+        assert out == {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+            }
+        }
+
+    def test_deny_with_reason(self, capsys):
+        emit_decision("deny", "user said no")
+        out = json.loads(capsys.readouterr().out)
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert out["hookSpecificOutput"]["permissionDecisionReason"] == "user said no"
+
+    def test_ask_omits_reason_when_blank(self, capsys):
+        emit_decision("ask", "")
+        out = json.loads(capsys.readouterr().out)
+        assert "permissionDecisionReason" not in out["hookSpecificOutput"]

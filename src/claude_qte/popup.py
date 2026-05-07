@@ -53,7 +53,7 @@ def prompt_user(question: str) -> dict:
     while time.time() < deadline:
         if os.path.exists(afile):
             try:
-                with open(afile, "r", encoding="utf-8") as fh:
+                with open(afile, encoding="utf-8") as fh:
                     answer = json.load(fh)
             finally:
                 safe_unlink(afile)
@@ -92,9 +92,7 @@ def compute_window_size(question: str) -> tuple:
         if not paragraph:
             wrapped_lines += 1
             continue
-        wrapped_lines += len(textwrap.wrap(
-            paragraph, width=wrap_w, break_long_words=True
-        ) or [""])
+        wrapped_lines += len(textwrap.wrap(paragraph, width=wrap_w, break_long_words=True) or [""])
 
     target_rows = max(MIN_ROWS, min(MAX_ROWS, CHROME_ROWS + wrapped_lines))
     return target_cols, target_rows
@@ -109,12 +107,12 @@ def spawn_terminal_window(rid: str, question: str) -> str:
     cols, rows = compute_window_size(question)
 
     binary = current_invocation()
-    quoted = " ".join(shell_quote(part) for part in binary + ["--tui", rid])
+    quoted = " ".join(shell_quote(part) for part in [*binary, "--tui", rid])
     # `exec` replaces the shell with our Python TUI, so when Python exits
     # there is no leftover shell process in the tty.
     inner = f"clear; exec {quoted}"
 
-    applescript = f'''
+    applescript = f"""
 on run
     tell application "Finder"
         set sb to bounds of window of desktop
@@ -143,10 +141,12 @@ on run
         end try
     end tell
 end run
-'''
+"""
     proc = subprocess.run(
         ["osascript", "-e", applescript],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return proc.stdout.strip()
 
@@ -154,13 +154,13 @@ end run
 def close_terminal_window(window_id: str) -> None:
     if not window_id:
         return
-    script = f'''
+    script = f"""
 tell application "Terminal"
     try
         close (every window whose id is {window_id}) saving no
     end try
 end tell
-'''
+"""
     subprocess.Popen(
         ["osascript", "-e", script],
         stdout=subprocess.DEVNULL,

@@ -4,6 +4,7 @@ Runs as ``claude-qte --tui <rid>``: reads the question from a tmp file,
 draws a Claude-Code-style prompt, writes the answer back, and exits.
 """
 
+import contextlib
 import curses
 import json
 import os
@@ -12,7 +13,7 @@ import textwrap
 
 from claude_qte._runtime import TMP_DIR
 
-ACCENT_FG = 208       # 256-color orange (Claude Code-ish)
+ACCENT_FG = 208  # 256-color orange (Claude Code-ish)
 DIM_FG = 244
 TEXT_FG = 252
 PANEL_BG = 234
@@ -36,7 +37,7 @@ def run_tui(rid: str) -> None:
         sys.stderr.write(f"claude-qte TUI: question file not found: {qfile}\n")
         sys.exit(1)
 
-    with open(qfile, "r", encoding="utf-8") as fh:
+    with open(qfile, encoding="utf-8") as fh:
         question = json.load(fh).get("question", "").strip()
 
     answer = curses.wrapper(_tui_loop, question)
@@ -73,8 +74,7 @@ def _tui_loop(stdscr, question: str) -> dict:
 
     while True:
         stdscr.erase()
-        scroll = _draw_frame(stdscr, question, selected, scroll,
-                             custom_reply_mode, custom_text)
+        scroll = _draw_frame(stdscr, question, selected, scroll, custom_reply_mode, custom_text)
         stdscr.refresh()
 
         ch = stdscr.get_wch()
@@ -110,15 +110,15 @@ def _tui_loop(stdscr, question: str) -> dict:
             custom_reply_mode = True
 
 
-def _draw_frame(stdscr, question: str, selected: int, scroll: int,
-                custom_mode: bool, custom_text: str) -> int:
+def _draw_frame(
+    stdscr, question: str, selected: int, scroll: int, custom_mode: bool, custom_text: str
+) -> int:
     h, w = stdscr.getmaxyx()
     if h < 12 or w < 50:
-        try:
-            stdscr.addstr(0, 0, "Window too small. Resize and try again.",
-                          curses.color_pair(ACCENT_PAIR))
-        except curses.error:
-            pass
+        with contextlib.suppress(curses.error):
+            stdscr.addstr(
+                0, 0, "Window too small. Resize and try again.", curses.color_pair(ACCENT_PAIR)
+            )
         return scroll
 
     pad_x = max(2, (w - 96) // 2)
@@ -127,11 +127,11 @@ def _draw_frame(stdscr, question: str, selected: int, scroll: int,
 
     # Header
     _safe_addstr(stdscr, y, pad_x, "✻ ", curses.color_pair(ACCENT_PAIR) | curses.A_BOLD)
-    _safe_addstr(stdscr, y, pad_x + 2, "Claude Code",
-                 curses.color_pair(TEXT_PAIR) | curses.A_BOLD)
+    _safe_addstr(stdscr, y, pad_x + 2, "Claude Code", curses.color_pair(TEXT_PAIR) | curses.A_BOLD)
     right_label = "permission required"
-    _safe_addstr(stdscr, y, pad_x + inner_w - len(right_label),
-                 right_label, curses.color_pair(DIM_PAIR))
+    _safe_addstr(
+        stdscr, y, pad_x + inner_w - len(right_label), right_label, curses.color_pair(DIM_PAIR)
+    )
     y += 1
     _safe_addstr(stdscr, y, pad_x, "─" * inner_w, curses.color_pair(DIM_PAIR))
     y += 2
@@ -142,9 +142,7 @@ def _draw_frame(stdscr, question: str, selected: int, scroll: int,
 
     # Panel border (top)
     panel_w = inner_w
-    _safe_addstr(stdscr, y, pad_x,
-                 "╭" + "─" * (panel_w - 2) + "╮",
-                 curses.color_pair(DIM_PAIR))
+    _safe_addstr(stdscr, y, pad_x, "╭" + "─" * (panel_w - 2) + "╮", curses.color_pair(DIM_PAIR))
     y += 1
     panel_top = y
 
@@ -153,7 +151,7 @@ def _draw_frame(stdscr, question: str, selected: int, scroll: int,
     panel_max_h = max(3, h - panel_top - 1 - 4 - options_h - footer_h)
 
     wrapped = _wrap(question, panel_w - 4)
-    visible = wrapped[scroll:scroll + panel_max_h]
+    visible = wrapped[scroll : scroll + panel_max_h]
 
     for i in range(panel_max_h):
         line = visible[i] if i < len(visible) else ""
@@ -162,9 +160,7 @@ def _draw_frame(stdscr, question: str, selected: int, scroll: int,
         _safe_addstr(stdscr, panel_top + i, pad_x, text, attr)
 
     y = panel_top + panel_max_h
-    _safe_addstr(stdscr, y, pad_x,
-                 "╰" + "─" * (panel_w - 2) + "╯",
-                 curses.color_pair(DIM_PAIR))
+    _safe_addstr(stdscr, y, pad_x, "╰" + "─" * (panel_w - 2) + "╯", curses.color_pair(DIM_PAIR))
     y += 1
 
     # Scroll hint
@@ -174,33 +170,32 @@ def _draw_frame(stdscr, question: str, selected: int, scroll: int,
     y += 1
 
     # Options
-    _safe_addstr(stdscr, y, pad_x, "Do you want to proceed?",
-                 curses.color_pair(TEXT_PAIR))
+    _safe_addstr(stdscr, y, pad_x, "Do you want to proceed?", curses.color_pair(TEXT_PAIR))
     y += 1
     for i, (label, _) in enumerate(OPTIONS):
         is_sel = (i == selected) and not custom_mode
         caret = "❯ " if is_sel else "  "
-        attr = curses.color_pair(ACCENT_PAIR) | curses.A_BOLD if is_sel else curses.color_pair(TEXT_PAIR)
+        attr = (
+            curses.color_pair(ACCENT_PAIR) | curses.A_BOLD
+            if is_sel
+            else curses.color_pair(TEXT_PAIR)
+        )
         _safe_addstr(stdscr, y, pad_x, caret + label, attr)
         y += 1
 
     # Custom reply input
     if custom_mode:
         y += 1
-        _safe_addstr(stdscr, y, pad_x, "↳ Reply to Claude:",
-                     curses.color_pair(DIM_PAIR))
+        _safe_addstr(stdscr, y, pad_x, "↳ Reply to Claude:", curses.color_pair(DIM_PAIR))
         y += 1
         max_input_w = panel_w - 4
         shown = custom_text[-max_input_w:]
-        _safe_addstr(stdscr, y, pad_x,
-                     "│ " + shown + "█",
-                     curses.color_pair(ACCENT_PAIR))
+        _safe_addstr(stdscr, y, pad_x, "│ " + shown + "█", curses.color_pair(ACCENT_PAIR))
         y += 1
 
     # Footer
     footer_y = h - 2
-    _safe_addstr(stdscr, footer_y - 1, pad_x,
-                 "─" * inner_w, curses.color_pair(DIM_PAIR))
+    _safe_addstr(stdscr, footer_y - 1, pad_x, "─" * inner_w, curses.color_pair(DIM_PAIR))
     if custom_mode:
         keys = "⏎ send to Claude   esc cancel"
     else:
@@ -218,9 +213,10 @@ def _wrap(text: str, width: int) -> list:
         if not paragraph:
             out.append("")
             continue
-        out.extend(textwrap.wrap(paragraph, width=width,
-                                 break_long_words=True,
-                                 replace_whitespace=False) or [""])
+        out.extend(
+            textwrap.wrap(paragraph, width=width, break_long_words=True, replace_whitespace=False)
+            or [""]
+        )
     return out
 
 
@@ -228,7 +224,5 @@ def _safe_addstr(stdscr, y: int, x: int, text: str, attr=0) -> None:
     h, w = stdscr.getmaxyx()
     if y < 0 or y >= h or x < 0 or x >= w:
         return
-    try:
+    with contextlib.suppress(curses.error):
         stdscr.addnstr(y, x, text, max(0, w - x - 1), attr)
-    except curses.error:
-        pass

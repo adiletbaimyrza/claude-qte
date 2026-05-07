@@ -3,8 +3,6 @@
 import socket
 import threading
 
-import pytest
-
 from claude_qte.wrapper import pick_free_port, wait_for_port
 
 

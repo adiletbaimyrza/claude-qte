@@ -23,7 +23,7 @@ def load_settings(path: str = SETTINGS_PATH) -> dict:
     if not os.path.exists(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except (json.JSONDecodeError, OSError):
         return {}
@@ -78,10 +78,10 @@ def unpatch_hook(path: str = SETTINGS_PATH) -> bool:
     hooks = settings.get("hooks") or {}
     pre = hooks.get("PreToolUse") or []
     cleaned = [
-        group for group in pre
+        group
+        for group in pre
         if not any(
-            HOOK_COMMAND_MARKER in (cmd.get("command") or "")
-            for cmd in (group.get("hooks") or [])
+            HOOK_COMMAND_MARKER in (cmd.get("command") or "") for cmd in (group.get("hooks") or [])
         )
     ]
     if cleaned == pre:

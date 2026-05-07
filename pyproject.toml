@@ -22,7 +22,10 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
 
 [project.scripts]
 claude-qte = "claude_qte.cli:main"
@@ -40,3 +43,32 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line-too-long — formatter already softens this
+    "SIM108", # if/else → ternary isn't always more readable
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # `assert False` is fine in tests
+"src/claude_qte/tui.py" = ["RUF001"]  # intentional Unicode for the Claude Code-style UI
+
+[tool.ruff.format]
+quote-style = "double"

@@ -151,7 +151,7 @@ claude-qte/
 ## Develop
 
 ```sh
-# Editable install + dev deps:
+# Editable install + dev deps (pytest, ruff):
 pip install -e ".[dev]"
 
 # Run from source:
@@ -160,7 +160,16 @@ python -m claude_qte run claude
 
 # Tests:
 pytest
+
+# Lint + format:
+ruff check        # static analysis
+ruff format       # apply formatter
+ruff format --check   # CI-style: fail if anything would change
 ```
+
+CI runs `ruff check`, `ruff format --check`, and `pytest` before building
+the release binary; a tag push (`v*`) attaches that binary to a new
+GitHub release.
 
 ## Build the release binary
 
