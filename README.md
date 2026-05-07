@@ -5,8 +5,10 @@
 Stops missing permission prompts. When Claude Code asks for permission and
 you're staring at the terminal, the native inline prompt handles it as
 usual. When you've wandered off — IDE, browser, Slack — a fresh **Terminal
-window pops up at your cursor**, sized to the request, with the same look
-as Claude Code's prompt. Answer; window vanishes; Claude proceeds.
+window pops up**, sized to the request, with the same look as Claude Code's
+prompt. It stays on top of other windows and plays a notification sound.
+For Write/Edit tools it shows a colored unified diff. Answer; window
+vanishes; Claude proceeds.
 
 **Supports macOS and Linux** (X11 desktops; Wayland degrades gracefully).
 
@@ -85,9 +87,11 @@ sudo pacman -S xdotool xprintidle wmctrl
 sudo dnf install xdotool xprintidle wmctrl
 ```
 
-`xprintidle` — idle detection · `xdotool` — frontmost terminal detection · `wmctrl` — window centering (all optional; missing tools degrade gracefully).
+`xprintidle` — idle detection · `xdotool` — frontmost terminal detection + window raising · `wmctrl` — window centering and always-on-top (all optional; missing tools degrade gracefully).
 
 ## How it feels (the popup)
+
+**Bash commands** show the command and description:
 
 ```
   ✻ Claude Code                                   permission required
@@ -105,45 +109,57 @@ sudo dnf install xdotool xprintidle wmctrl
     2. No, and tell Claude what to do differently
 
   ────────────────────────────────────────────────────────────────────
-  ↑↓ select   ⏎ confirm   1 allow   2 deny+reply   esc deny+reply
+  PgUp/PgDn scroll   ↑↓ select   ⏎ confirm   1 allow   2 deny+reply
 ```
 
-The window is sized to the request: tiny for `git status`, taller for a
-long file write. Pick `2` (or Esc) and a typed reply box opens — that text
-is sent back to Claude as the deny reason.
+**Write and Edit tools** show a colored unified diff instead of just the file path — green for additions, red for deletions, cyan for hunk headers. For `Write`, the diff is computed against the existing file on disk (or shown as a full addition for new files).
+
+The window is sized to the request: tiny for `git status`, taller for a long diff. Pick `2` (or Esc) and a typed reply box opens — that text is sent back to Claude as the deny reason.
+
+The popup window stays on top of other windows on X11 (via `wmctrl` + `xdotool`) and re-raises itself every second until you respond, so clicking elsewhere won't bury it.
+
+A notification sound plays when the popup appears. Default is a clean notification chime; customize with `claude-qte sound`.
 
 ## Keyboard
 
-| Key      | Action                          |
-| -------- | ------------------------------- |
-| ↑ / ↓    | Move selection                  |
-| Enter    | Confirm selected option         |
-| 1        | Quick allow                     |
-| 2 / Esc  | Deny and open the reply prompt  |
+| Key          | Action                          |
+| ------------ | ------------------------------- |
+| PgUp / PgDn  | Scroll the content panel        |
+| Home / End   | Jump to top / bottom of panel   |
+| ↑ / ↓        | Move Yes/No selection           |
+| Enter        | Confirm selected option         |
+| 1            | Quick allow                     |
+| 2 / Esc      | Deny and open the reply prompt  |
 
 ## Slash commands
 
-Once installed, two Claude Code slash commands are available in every session:
+Once installed, three Claude Code slash commands are available in every session:
 
-| Command    | What it does                                       |
-| ---------- | -------------------------------------------------- |
-| `/qte-off` | Disable the gate — Claude uses native prompts      |
-| `/qte-on`  | Re-enable the gate                                 |
+| Command      | What it does                                         |
+| ------------ | ---------------------------------------------------- |
+| `/qte-off`   | Disable the gate — Claude uses native prompts        |
+| `/qte-on`    | Re-enable the gate                                   |
+| `/qte-sound` | List sounds and switch the notification sound        |
 
 Disabling writes `~/.config/claude-qte/disabled`; the hook sees it and
 falls through to `"ask"` on every tool call. Enabling deletes the file.
 
 ## Subcommands
 
-| Command                     | What it does                                          |
-| --------------------------- | ----------------------------------------------------- |
-| `claude-qte run <cmd>...`   | Start a per-session gate, run `<cmd>`, kill the gate. |
-| `claude-qte`                | Run the gate directly (server mode).                  |
-| `claude-qte hook`           | PreToolUse hook entry point. Wired by `install`.      |
-| `claude-qte install`        | Drop the binary and register the Claude Code hook.    |
-| `claude-qte uninstall`      | Reverse `install`.                                    |
-| `claude-qte disable`        | Disable the gate (same as `/qte-off`).                |
-| `claude-qte enable`         | Re-enable the gate (same as `/qte-on`).               |
+| Command                          | What it does                                          |
+| -------------------------------- | ----------------------------------------------------- |
+| `claude-qte run <cmd>...`        | Start a per-session gate, run `<cmd>`, kill the gate. |
+| `claude-qte`                     | Run the gate directly (server mode).                  |
+| `claude-qte hook`                | PreToolUse hook entry point. Wired by `install`.      |
+| `claude-qte install`             | Drop the binary and register the Claude Code hook.    |
+| `claude-qte uninstall`           | Reverse `install`.                                    |
+| `claude-qte update`              | Fetch and install the latest release from GitHub.     |
+| `claude-qte disable`             | Disable the gate (same as `/qte-off`).                |
+| `claude-qte enable`              | Re-enable the gate (same as `/qte-on`).               |
+| `claude-qte sound list`          | Show available notification sounds.                   |
+| `claude-qte sound set <name>`    | Switch to a different sound (plays a preview).        |
+| `claude-qte sound off`           | Mute the notification sound.                          |
+| `claude-qte sound on`            | Unmute the notification sound.                        |
 
 ## API (the gate's HTTP surface)
 
@@ -181,10 +197,12 @@ claude-qte/
 │   ├── tui.py             # curses TUI (renders inside the spawned window)
 │   ├── hook.py            # Claude Code PreToolUse hook + presence detection
 │   ├── wrapper.py         # `claude-qte run` per-session lifecycle
-│   ├── installer.py       # install / uninstall
+│   ├── installer.py       # install / uninstall / update
 │   ├── settings.py        # ~/.claude/settings.json patcher
 │   ├── _platform.py       # macOS + Linux OS integration (idle, tty, terminal spawn)
-│   └── _runtime.py        # shared low-level helpers
+│   ├── _runtime.py        # shared low-level helpers
+│   ├── _sound.py          # notification sound (play, get/set, mute)
+│   └── sounds/            # bundled mp3 notification sounds
 └── tests/                 # pytest — pure logic + a couple of socket tests
 ```
 
