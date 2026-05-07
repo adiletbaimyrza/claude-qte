@@ -59,7 +59,8 @@ tool, the hook decides:
 - **Otherwise** → hook spawns the QTE popup, blocks until you answer, and
   returns `"allow"` or `"deny"` to Claude Code.
 
-Idle threshold and supported terminals are tunable inside `claude_qte.py`.
+Idle threshold and supported terminals are tunable inside
+`src/claude_qte/hook.py`.
 
 ## How it feels (the popup)
 
@@ -127,18 +128,47 @@ Response:
 
 ### `GET /ping`  →  `{"status": "ok", "port": 9999}`
 
-## Build from source
+## Layout
+
+```
+claude-qte/
+├── pyproject.toml
+├── claude_qte.spec        # PyInstaller spec for the single-file binary
+├── install.sh             # one-line installer (downloads release binary)
+├── src/claude_qte/
+│   ├── cli.py             # argparse + dispatch
+│   ├── server.py          # HTTP gate (/ask, /ping)
+│   ├── popup.py           # spawn Terminal window, manage handoff
+│   ├── tui.py             # curses TUI (renders inside the spawned window)
+│   ├── hook.py            # Claude Code PreToolUse hook + presence detection
+│   ├── wrapper.py         # `claude-qte run` per-session lifecycle
+│   ├── installer.py       # install / uninstall / legacy LaunchAgent cleanup
+│   ├── settings.py        # ~/.claude/settings.json patcher
+│   └── _runtime.py        # shared low-level helpers
+└── tests/                 # pytest — pure logic + a couple of socket tests
+```
+
+## Develop
+
+```sh
+# Editable install + dev deps:
+pip install -e ".[dev]"
+
+# Run from source:
+python -m claude_qte
+python -m claude_qte run claude
+
+# Tests:
+pytest
+```
+
+## Build the release binary
 
 ```sh
 pip install -r requirements-build.txt
+pip install .
 pyinstaller --clean --noconfirm claude_qte.spec
 # → dist/claude-qte
-```
-
-Or run as a script (macOS ships Python 3):
-
-```sh
-python3 claude_qte.py
 ```
 
 ## Why "qte"?

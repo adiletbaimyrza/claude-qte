@@ -1,15 +1,26 @@
 # PyInstaller spec — single-file macOS binary for claude-qte.
-# Build:  pyinstaller claude_qte.spec
+# Build:  pyinstaller --clean --noconfirm claude_qte.spec
 # Output: dist/claude-qte
 
 block_cipher = None
 
 a = Analysis(
-    ['claude_qte.py'],
-    pathex=[],
+    ['src/claude_qte/__main__.py'],
+    pathex=['src'],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        'claude_qte',
+        'claude_qte.cli',
+        'claude_qte.server',
+        'claude_qte.popup',
+        'claude_qte.tui',
+        'claude_qte.hook',
+        'claude_qte.wrapper',
+        'claude_qte.installer',
+        'claude_qte.settings',
+        'claude_qte._runtime',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
