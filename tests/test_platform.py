@@ -249,9 +249,8 @@ class TestSpawnTerminalWindowLinux:
         monkeypatch.setattr(plat, "IS_LINUX", True)
         monkeypatch.setattr(plat.shutil, "which", lambda name: f"/usr/bin/{name}")
         monkeypatch.delenv("TERM_PROGRAM", raising=False)
-        monkeypatch.setattr(plat.time, "sleep", lambda _: None)
+        monkeypatch.setattr(plat, "_find_xwindow_by_pid", lambda pid, **kw: "")
         monkeypatch.setattr(plat, "_center_window_linux", lambda *a, **kw: None)
-        monkeypatch.setattr(plat, "_get_active_xwindow_id", lambda: "")
         monkeypatch.setattr(plat, "_pin_window_on_top_linux", lambda *a, **kw: None)
 
         mock_proc = MagicMock()
@@ -266,9 +265,8 @@ class TestSpawnTerminalWindowLinux:
         monkeypatch.setattr(plat, "IS_MACOS", False)
         monkeypatch.setattr(plat, "IS_LINUX", True)
         monkeypatch.delenv("TERM_PROGRAM", raising=False)
-        monkeypatch.setattr(plat.time, "sleep", lambda _: None)
+        monkeypatch.setattr(plat, "_find_xwindow_by_pid", lambda pid, **kw: "")
         monkeypatch.setattr(plat, "_center_window_linux", lambda *a, **kw: None)
-        monkeypatch.setattr(plat, "_get_active_xwindow_id", lambda: "")
         monkeypatch.setattr(plat, "_pin_window_on_top_linux", lambda *a, **kw: None)
 
         def _which(name):
@@ -302,9 +300,8 @@ class TestSpawnTerminalWindowLinux:
         monkeypatch.setattr(plat, "IS_MACOS", False)
         monkeypatch.setattr(plat, "IS_LINUX", True)
         monkeypatch.delenv("TERM_PROGRAM", raising=False)
-        monkeypatch.setattr(plat.time, "sleep", lambda _: None)
+        monkeypatch.setattr(plat, "_find_xwindow_by_pid", lambda pid, **kw: "98765")
         monkeypatch.setattr(plat, "_center_window_linux", lambda *a: None)
-        monkeypatch.setattr(plat, "_get_active_xwindow_id", lambda: "98765")
         monkeypatch.setattr(plat, "_pin_window_on_top_linux", lambda *a: None)
         monkeypatch.setattr(plat.shutil, "which", lambda name: f"/usr/bin/{name}")
 

@@ -382,7 +382,7 @@ def _place_window_linux(xwin_id: str, x: int, y: int) -> None:
         return
     with contextlib.suppress(Exception):
         subprocess.run(
-            ["wmctrl", "-i", "-r", xwin_id, "-e", f"0,{x},{y},-1,-1"],
+            ["wmctrl", "-i", "-r", _dec_to_hex_xwin(xwin_id), "-e", f"0,{x},{y},-1,-1"],
             check=False,
             timeout=2,
             stdout=subprocess.DEVNULL,
@@ -416,7 +416,7 @@ def _read_window_position_linux(xwin_id: str) -> tuple[int, int] | None:
 
 
 def _get_active_xwindow_id() -> str:
-    """Return the hex window ID of the currently focused X11 window, or ''."""
+    """Return the decimal window ID of the currently focused X11 window, or ''."""
     try:
         out = subprocess.run(
             ["xdotool", "getactivewindow"],
@@ -429,13 +429,41 @@ def _get_active_xwindow_id() -> str:
         return ""
 
 
+def _dec_to_hex_xwin(xwin_id: str) -> str:
+    """Convert a decimal xdotool window id to the 0x... hex form wmctrl expects."""
+    try:
+        return hex(int(xwin_id))
+    except (ValueError, TypeError):
+        return xwin_id
+
+
+def _find_xwindow_by_pid(pid: int, timeout: float = 3.0) -> str:
+    """Poll until xdotool finds a window owned by *pid*; return decimal id or ''."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            out = subprocess.run(
+                ["xdotool", "search", "--pid", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            ).stdout.strip()
+            lines = [ln for ln in out.splitlines() if ln.strip().isdigit()]
+            if lines:
+                return lines[-1]
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return ""
+        time.sleep(0.1)
+    return ""
+
+
 def _pin_window_on_top_linux(xwin_id: str) -> None:
     """Set _NET_WM_STATE_ABOVE and raise the window. No-op if tools unavailable."""
     if not xwin_id:
         return
     with contextlib.suppress(Exception):
         subprocess.run(
-            ["wmctrl", "-i", "-r", xwin_id, "-b", "add,above"],
+            ["wmctrl", "-i", "-r", _dec_to_hex_xwin(xwin_id), "-b", "add,above"],
             check=False,
             timeout=2,
             stdout=subprocess.DEVNULL,
@@ -460,9 +488,18 @@ def _pin_window_on_top_linux(xwin_id: str) -> None:
 
 
 def raise_window_linux(xwin_id: str) -> None:
-    """Re-raise a pinned window so it comes back to the front if buried."""
+    """Re-apply above state and raise the window so it stays on top."""
     if not xwin_id:
         return
+    # Re-assert _NET_WM_STATE_ABOVE — some WMs drop it when focus changes.
+    with contextlib.suppress(Exception):
+        subprocess.run(
+            ["wmctrl", "-i", "-r", _dec_to_hex_xwin(xwin_id), "-b", "add,above"],
+            check=False,
+            timeout=1,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     with contextlib.suppress(Exception):
         subprocess.run(
             ["xdotool", "windowraise", xwin_id],
@@ -511,9 +548,8 @@ def _spawn_terminal_window_linux(
         else:
             return ""
 
-    # Wait for the window to appear, then position and pin it on top.
-    time.sleep(0.25)
-    xwin_id = _get_active_xwindow_id()
+    # Wait for the window to appear by polling xdotool for the process's window.
+    xwin_id = _find_xwindow_by_pid(proc.pid)
     if position is not None:
         _place_window_linux(xwin_id, *position)
     else:

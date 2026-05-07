@@ -4,6 +4,8 @@ import io
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 import claude_qte.hook as hook_mod
 from claude_qte.hook import (
     _is_permitted,
@@ -286,6 +288,10 @@ class TestIsPermitted:
 
 
 class TestRunHookFlows:
+    @pytest.fixture(autouse=True)
+    def _ensure_enabled(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(hook_mod, "DISABLED_FLAG", str(tmp_path / "disabled"))
+
     def test_permitted_tool_emits_allow(self, monkeypatch, capsys):
         monkeypatch.setattr(hook_mod, "_is_permitted", lambda *a: True)
         monkeypatch.setattr(
