@@ -76,7 +76,12 @@ Presence detection per platform:
 Idle threshold is tunable at the top of `src/claude_qte/hook.py`
 (`USER_PRESENCE_IDLE_SECONDS`).
 
-**Linux optional dependencies** (install via your package manager for best results):
+### Linux dependencies — install these or the popup won't fire
+
+On Linux the gate uses `xprintidle` for idle time and `xdotool` for
+frontmost-window detection. **If both are missing, presence detection
+concludes you're always present** and the gate falls through to the
+native inline prompt every time — i.e. the popup will never appear.
 
 ```sh
 # Debian/Ubuntu
@@ -87,7 +92,15 @@ sudo pacman -S xdotool xprintidle wmctrl
 sudo dnf install xdotool xprintidle wmctrl
 ```
 
-`xprintidle` — idle detection · `xdotool` — frontmost terminal detection + window raising · `wmctrl` — window centering and always-on-top (all optional; missing tools degrade gracefully).
+`xprintidle` — idle detection (required for popup to fire while focused on the terminal but idle) · `xdotool` — frontmost terminal detection + window raising (required for popup to fire when focused on another window) · `wmctrl` — window centering and always-on-top (optional; degrades gracefully).
+
+Verify after install:
+
+```sh
+xprintidle && xdotool getactivewindow getwindowname
+```
+
+On Wayland these tools don't help — see the table above for graceful-degradation behavior.
 
 ## How it feels (the popup)
 

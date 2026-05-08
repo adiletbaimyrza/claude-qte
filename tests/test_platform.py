@@ -75,7 +75,11 @@ class TestIdleSeconds:
         monkeypatch.setattr(plat, "IS_MACOS", False)
         monkeypatch.setattr(plat, "IS_LINUX", True)
         monkeypatch.setenv("DISPLAY", ":0")
-        monkeypatch.setattr(plat.shutil, "which", lambda name: None)
+
+        def _raise(*a, **kw):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(subprocess, "run", _raise)
         assert plat.idle_seconds() == 0.0
 
     def test_linux_no_display_returns_zero(self, monkeypatch):
