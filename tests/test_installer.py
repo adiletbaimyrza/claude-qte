@@ -127,10 +127,14 @@ class TestSlashCommands:
         monkeypatch.setattr(inst_mod, "_QTE_OFF_CMD", str(tmp_path / "commands" / "qte-off.md"))
         monkeypatch.setattr(inst_mod, "_QTE_ON_CMD", str(tmp_path / "commands" / "qte-on.md"))
         monkeypatch.setattr(inst_mod, "_QTE_SOUND_CMD", str(tmp_path / "commands" / "qte-sound.md"))
+        monkeypatch.setattr(
+            inst_mod, "_QTE_DENIALS_CMD", str(tmp_path / "commands" / "qte-denials.md")
+        )
         inst_mod.install_slash_commands()
         assert os.path.exists(inst_mod._QTE_OFF_CMD)
         assert os.path.exists(inst_mod._QTE_ON_CMD)
         assert os.path.exists(inst_mod._QTE_SOUND_CMD)
+        assert os.path.exists(inst_mod._QTE_DENIALS_CMD)
 
     def test_uninstall_removes_command_files(self, monkeypatch, tmp_path):
         cmds_dir = str(tmp_path / "commands")
@@ -138,16 +142,21 @@ class TestSlashCommands:
         monkeypatch.setattr(inst_mod, "_QTE_OFF_CMD", str(tmp_path / "commands" / "qte-off.md"))
         monkeypatch.setattr(inst_mod, "_QTE_ON_CMD", str(tmp_path / "commands" / "qte-on.md"))
         monkeypatch.setattr(inst_mod, "_QTE_SOUND_CMD", str(tmp_path / "commands" / "qte-sound.md"))
+        monkeypatch.setattr(
+            inst_mod, "_QTE_DENIALS_CMD", str(tmp_path / "commands" / "qte-denials.md")
+        )
         inst_mod.install_slash_commands()
         inst_mod.uninstall_slash_commands()
         assert not os.path.exists(inst_mod._QTE_OFF_CMD)
         assert not os.path.exists(inst_mod._QTE_ON_CMD)
         assert not os.path.exists(inst_mod._QTE_SOUND_CMD)
+        assert not os.path.exists(inst_mod._QTE_DENIALS_CMD)
 
     def test_uninstall_noop_when_missing(self, monkeypatch, tmp_path):
         monkeypatch.setattr(inst_mod, "_QTE_OFF_CMD", str(tmp_path / "qte-off.md"))
         monkeypatch.setattr(inst_mod, "_QTE_ON_CMD", str(tmp_path / "qte-on.md"))
         monkeypatch.setattr(inst_mod, "_QTE_SOUND_CMD", str(tmp_path / "qte-sound.md"))
+        monkeypatch.setattr(inst_mod, "_QTE_DENIALS_CMD", str(tmp_path / "qte-denials.md"))
         inst_mod.uninstall_slash_commands()  # must not raise
 
 
