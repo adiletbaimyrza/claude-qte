@@ -17,6 +17,7 @@ from claude_qte._runtime import (
     pick_free_port,
     wait_for_port,
 )
+from claude_qte.denial_log import log_denial
 
 # How long the user can be away from the keyboard / off the terminal before
 # we assume they aren't watching and pop up the QTE window.
@@ -79,7 +80,9 @@ def run_hook() -> None:
     if answer.get("approved"):
         emit_decision("allow", answer.get("answer") or "approved via claude-qte")
     else:
-        emit_decision("deny", answer.get("answer") or "denied via claude-qte")
+        denial_reason = answer.get("answer") or "denied via claude-qte"
+        log_denial(tool_name, tool_input, denial_reason, cwd)
+        emit_decision("deny", denial_reason)
 
 
 def _gate_port_file(ppid: int) -> str:

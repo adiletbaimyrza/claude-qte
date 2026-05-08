@@ -28,6 +28,7 @@ COMMANDS_DIR = os.path.expanduser("~/.claude/commands")
 _QTE_OFF_CMD = os.path.join(COMMANDS_DIR, "qte-off.md")
 _QTE_ON_CMD = os.path.join(COMMANDS_DIR, "qte-on.md")
 _QTE_SOUND_CMD = os.path.join(COMMANDS_DIR, "qte-sound.md")
+_QTE_DENIALS_CMD = os.path.join(COMMANDS_DIR, "qte-denials.md")
 _QTE_OFF_CONTENT = """\
 Run this exact shell command and report the output: `claude-qte disable`
 """
@@ -41,6 +42,14 @@ Then ask the user which sound they want (or if they want sound off/on) and run t
 - To set a sound: `claude-qte sound set <name>`
 - To disable sound: `claude-qte sound off`
 - To enable sound: `claude-qte sound on`
+"""
+_QTE_DENIALS_CONTENT = """\
+Run this exact shell command and report the output: `claude-qte denials`
+
+Then offer to help the user act on the log:
+- To show only the last N entries: `claude-qte denials -n <N>`
+- To clear the log: `claude-qte denials --clear`
+- If the user wants to permanently allow a repeated denial, suggest adding a permissions.allow rule to their Claude settings.
 """
 
 CLAUDE_MD_PATH = os.path.expanduser("~/.claude/CLAUDE.md")
@@ -120,10 +129,12 @@ def install_slash_commands() -> None:
         fh.write(_QTE_ON_CONTENT)
     with open(_QTE_SOUND_CMD, "w", encoding="utf-8") as fh:
         fh.write(_QTE_SOUND_CONTENT)
+    with open(_QTE_DENIALS_CMD, "w", encoding="utf-8") as fh:
+        fh.write(_QTE_DENIALS_CONTENT)
 
 
 def uninstall_slash_commands() -> None:
-    for path in (_QTE_OFF_CMD, _QTE_ON_CMD, _QTE_SOUND_CMD):
+    for path in (_QTE_OFF_CMD, _QTE_ON_CMD, _QTE_SOUND_CMD, _QTE_DENIALS_CMD):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(path)
 

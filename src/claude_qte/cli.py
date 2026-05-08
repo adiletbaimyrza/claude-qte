@@ -43,6 +43,21 @@ def main() -> None:
     )
     run_p.add_argument("argv", nargs=argparse.REMAINDER, help="Command to run (e.g. claude)")
 
+    denials_p = sub.add_parser("denials", help="Show the denial log (~/.claude/denials.log)")
+    denials_p.add_argument(
+        "-n",
+        "--last",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Show only the last N entries (default: all)",
+    )
+    denials_p.add_argument(
+        "--clear",
+        action="store_true",
+        help="Clear the denial log",
+    )
+
     args = parser.parse_args()
 
     if args.cmd == "hook":
@@ -114,6 +129,19 @@ def main() -> None:
         from claude_qte.wrapper import run_command
 
         run_command(args.argv)
+    elif args.cmd == "denials":
+        from claude_qte.denial_log import DENIAL_LOG_PATH, print_denials
+
+        if args.clear:
+            import contextlib
+
+            with contextlib.suppress(FileNotFoundError):
+                import os
+
+                os.unlink(DENIAL_LOG_PATH)
+            print("  Denial log cleared.")
+        else:
+            print_denials(last=args.last)
     elif args.tui:
         from claude_qte.tui import run_tui
 
