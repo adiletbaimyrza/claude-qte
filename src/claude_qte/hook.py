@@ -183,16 +183,17 @@ def emit_decision(decision: str, reason: str = "") -> None:
 def user_is_present() -> bool:
     """True iff the user is at the keyboard AND looking at the terminal where
     Claude Code is running."""
-    if idle_seconds() > USER_PRESENCE_IDLE_SECONDS:
-        return False
     parent_tty = _parent_tty()
     if not parent_tty:
         return False
     front_tty = frontmost_terminal_tty()
     if not front_tty:
         # TTY detection unavailable (xdotool missing or Wayland): trust idle time alone.
-        return True
-    return parent_tty == front_tty
+        return idle_seconds() <= USER_PRESENCE_IDLE_SECONDS
+    # If a different window is in front, pop up immediately regardless of idle time.
+    if parent_tty != front_tty:
+        return False
+    return idle_seconds() <= USER_PRESENCE_IDLE_SECONDS
 
 
 def _parent_tty() -> str:
